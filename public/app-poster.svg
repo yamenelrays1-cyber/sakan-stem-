@@ -1,0 +1,180 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="posterBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#070B14" />
+      <stop offset="45%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#1E293B" />
+    </linearGradient>
+
+    <radialGradient id="goldSpot" cx="28%" cy="50%" r="48%">
+      <stop offset="0%" stop-color="#F59E0B" stop-opacity="0.32" />
+      <stop offset="60%" stop-color="#D97706" stop-opacity="0.08" />
+      <stop offset="100%" stop-color="#0F172A" stop-opacity="0" />
+    </radialGradient>
+
+    <radialGradient id="emeraldSpot" cx="80%" cy="22%" r="40%">
+      <stop offset="0%" stop-color="#10B981" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#0F172A" stop-opacity="0" />
+    </radialGradient>
+
+    <linearGradient id="amberBtn" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#F59E0B" />
+      <stop offset="100%" stop-color="#D97706" />
+    </linearGradient>
+
+    <linearGradient id="bagGradPoster" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FBBF24" />
+      <stop offset="50%" stop-color="#F59E0B" />
+      <stop offset="100%" stop-color="#B45309" />
+    </linearGradient>
+
+    <linearGradient id="crownGradPoster" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FEF08A" />
+      <stop offset="50%" stop-color="#FACC15" />
+      <stop offset="100%" stop-color="#CA8A04" />
+    </linearGradient>
+
+    <filter id="cardShadow" x="-15%" y="-15%" width="130%" height="135%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#020617" flood-opacity="0.6" />
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" rx="36" fill="url(#posterBg)" />
+  <rect width="1200" height="630" rx="36" fill="url(#goldSpot)" />
+  <rect width="1200" height="630" rx="36" fill="url(#emeraldSpot)" />
+
+  <!-- Subtle Grid Pattern -->
+  <g stroke="#FFFFFF" stroke-opacity="0.04" stroke-width="1">
+    <line x1="0" y1="126" x2="1200" y2="126" />
+    <line x1="0" y1="252" x2="1200" y2="252" />
+    <line x1="0" y1="378" x2="1200" y2="378" />
+    <line x1="0" y1="504" x2="1200" y2="504" />
+    <line x1="240" y1="0" x2="240" y2="630" />
+    <line x1="480" y1="0" x2="480" y2="630" />
+    <line x1="720" y1="0" x2="720" y2="630" />
+    <line x1="960" y1="0" x2="960" y2="630" />
+  </g>
+
+  <!-- Border Frame -->
+  <rect x="16" y="16" width="1168" height="598" rx="28" fill="none" stroke="#FFFFFF" stroke-opacity="0.1" stroke-width="2" />
+
+  <!-- ==================== LEFT SIDE: 3D ILLUSTRATION SHOWCASE ==================== -->
+  <g transform="translate(290, 325)" filter="url(#cardShadow)">
+    <!-- Outer Glowing Halo -->
+    <circle cx="0" cy="0" r="220" fill="#1E293B" fill-opacity="0.55" stroke="#F59E0B" stroke-opacity="0.25" stroke-width="2" />
+    <circle cx="0" cy="0" r="175" fill="none" stroke="#10B981" stroke-opacity="0.22" stroke-width="2" stroke-dasharray="10 8" />
+
+    <!-- Chips Packet Left -->
+    <g transform="translate(-85, -88) rotate(-18)">
+      <rect x="-44" y="-58" width="88" height="110" rx="14" fill="#E11D48" stroke="#FDA4AF" stroke-width="2.5" />
+      <circle cx="0" cy="-6" r="24" fill="#FDE047" stroke="#CA8A04" stroke-width="3" />
+    </g>
+
+    <!-- Cold Drink Right -->
+    <g transform="translate(86, -84) rotate(16)">
+      <path d="M8,-88 L20,-64 L4,-32" fill="none" stroke="#F43F5E" stroke-width="10" stroke-linecap="round" />
+      <path d="M-38,-44 L38,-44 L30,52 L-30,52 Z" fill="#0284C7" stroke="#BAE6FD" stroke-width="2.5" />
+      <path d="M-42,-44 C-42,-68 42,-68 42,-44 Z" fill="#E0F2FE" />
+    </g>
+
+    <!-- Crown at Top -->
+    <g transform="translate(0, -152)">
+      <path d="M-54,26 L-66,-20 L-28,6 L0,-34 L28,6 L66,-20 L54,26 Z" fill="url(#crownGradPoster)" stroke="#FFFFFF" stroke-width="3" stroke-linejoin="round" />
+      <rect x="-54" y="30" width="108" height="13" rx="6.5" fill="#CA8A04" />
+      <circle cx="0" cy="-39" r="8" fill="#FEF08A" />
+      <circle cx="-68" cy="-24" r="6.5" fill="#FDE047" />
+      <circle cx="68" cy="-24" r="6.5" fill="#FDE047" />
+    </g>
+
+    <!-- Main Golden Order Bag -->
+    <path
+      d="M-126,-62 L126,-62 C135,-62 142,-54 140,-45 L118,142 C116,154 105,164 92,164 L-92,164 C-105,164 -116,154 -118,142 L-140,-45 C-142,-54 -135,-62 -126,-62 Z"
+      fill="url(#bagGradPoster)"
+      stroke="#FEF08A"
+      stroke-width="3.5"
+    />
+    <!-- Bag Handle -->
+    <path d="M-64,-40 L-64,-88 C-64,-122 64,-122 64,-88 L64,-40" fill="none" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round" />
+
+    <!-- Embedded Live Order Checklist Screen -->
+    <rect x="-94" y="-8" width="188" height="136" rx="22" fill="#0F172A" stroke="#FDE68A" stroke-opacity="0.5" stroke-width="2.5" />
+    <!-- Row 1 -->
+    <circle cx="64" cy="28" r="11" fill="#10B981" />
+    <path d="M59,28 L63,32 L71,24" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" />
+    <rect x="-40" y="22" width="88" height="12" rx="6" fill="#F8FAFC" />
+    <rect x="-74" y="22" width="24" height="12" rx="6" fill="#F59E0B" />
+    <!-- Row 2 -->
+    <circle cx="64" cy="60" r="11" fill="#10B981" />
+    <path d="M59,60 L63,64 L71,56" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" />
+    <rect x="-24" y="54" width="72" height="12" rx="6" fill="#CBD5E1" />
+    <rect x="-74" y="54" width="38" height="12" rx="6" fill="#38BDF8" />
+    <!-- Row 3 Pill -->
+    <rect x="-72" y="88" width="144" height="26" rx="13" fill="#1E293B" />
+    <text x="0" y="106" text-anchor="middle" fill="#FBBF24" font-family="system-ui, sans-serif" font-weight="800" font-size="14" letter-spacing="1.2">
+      ROOMS 404–410
+    </text>
+
+    <!-- Floating Live Sync Badge -->
+    <g transform="translate(155, -135)">
+      <rect x="-64" y="-24" width="128" height="48" rx="24" fill="#059669" stroke="#A7F3D0" stroke-width="2.5" />
+      <circle cx="42" cy="0" r="7" fill="#6EE7B7" />
+      <text x="-8" y="6" text-anchor="middle" fill="#FFFFFF" font-family="'Cairo', system-ui, sans-serif" font-weight="800" font-size="17">
+        مزامنة لحظية
+      </text>
+    </g>
+  </g>
+
+  <!-- ==================== RIGHT SIDE: ARABIC BRANDING & FEATURES ==================== -->
+  <g text-anchor="end" font-family="'Cairo', 'Tajawal', system-ui, sans-serif">
+    <!-- Top Badge -->
+    <rect x="850" y="84" width="270" height="44" rx="22" fill="#1E293B" stroke="#F59E0B" stroke-opacity="0.5" stroke-width="1.5" />
+    <circle cx="1096" cy="106" r="6" fill="#10B981" />
+    <text x="1078" y="113" fill="#FBBF24" font-weight="800" font-size="18">
+      STEM EL ARISH • غرف 404–410
+    </text>
+
+    <!-- Main Hero Headline -->
+    <text x="1120" y="210" fill="#FFFFFF" font-weight="900" font-size="68">
+      طلبات السكن 👑
+    </text>
+    <text x="1120" y="274" fill="#FBBF24" font-weight="800" font-size="34">
+      تجميع أوردرات الزمايل وحساب المشرف لحظياً
+    </text>
+
+    <!-- Subtitle Description -->
+    <text x="1120" y="335" fill="#CBD5E1" font-weight="600" font-size="23">
+      كل طالب يطلب من غرفته بالموبايل، والتطبيق يجمّع الأصناف المتشابهة
+    </text>
+    <text x="1120" y="372" fill="#94A3B8" font-weight="600" font-size="22">
+      ويحسب الكاش والمحفظة والباقي تلقائياً في شاشة المشرف
+    </text>
+
+    <!-- 3 Feature Pills -->
+    <!-- Pill 1 -->
+    <g transform="translate(910, 420)">
+      <rect x="0" y="0" width="210" height="62" rx="18" fill="#1E293B" stroke="#334155" stroke-width="2" />
+      <text x="188" y="28" fill="#10B981" font-weight="800" font-size="16">تجميع ذكي للأصناف</text>
+      <text x="188" y="49" fill="#E2E8F0" font-weight="700" font-size="14">شيبسي + شبسي = سطر واحد</text>
+    </g>
+
+    <!-- Pill 2 -->
+    <g transform="translate(682, 420)">
+      <rect x="0" y="0" width="210" height="62" rx="18" fill="#1E293B" stroke="#334155" stroke-width="2" />
+      <text x="188" y="28" fill="#FBBF24" font-weight="800" font-size="16">كشف حساب الزملاء</text>
+      <text x="188" y="49" fill="#E2E8F0" font-weight="700" font-size="14">كاش 💵 وإنستا باي 📱</text>
+    </g>
+
+    <!-- Pill 3 -->
+    <g transform="translate(454, 420)">
+      <rect x="0" y="0" width="210" height="62" rx="18" fill="#1E293B" stroke="#334155" stroke-width="2" />
+      <text x="188" y="28" fill="#38BDF8" font-weight="800" font-size="16">نسخ فوري للواتساب</text>
+      <text x="188" y="49" fill="#E2E8F0" font-weight="700" font-size="14">أوردر الكشك بضغطة زر 📋</text>
+    </g>
+
+    <!-- Footer Signature -->
+    <text x="1120" y="555" fill="#94A3B8" font-weight="700" font-size="19">
+      Made with ❤️ by Yamen Elrayes • STEM El Arish
+    </text>
+  </g>
+</svg>

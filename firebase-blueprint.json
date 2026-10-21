@@ -1,0 +1,214 @@
+{
+  "entities": {
+    "OrderSession": {
+      "title": "OrderSession",
+      "description": "Represents a shared dorm food and grocery order session managed by the Master (runner).",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Name of the order session or restaurant/store",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "storeName": {
+          "type": "string",
+          "description": "Target restaurant or supermarket name",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "masterName": {
+          "type": "string",
+          "description": "Name of the roommate acting as the Master (fetching the order)",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "roomCode": {
+          "type": "string",
+          "description": "Short alphanumeric room code for roommates",
+          "minLength": 3,
+          "maxLength": 20,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "deliveryFee": {
+          "type": "number",
+          "description": "Total delivery or service fee to split or track"
+        },
+        "status": {
+          "type": "string",
+          "description": "Current lifecycle status of the order session",
+          "enum": ["open", "ordering", "completed"]
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the creator of the session",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "memberUids": {
+          "type": "array",
+          "description": "Bounded list of up to 10 roommate UIDs participating in this session"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when session was created"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when session was last updated"
+        }
+      },
+      "required": [
+        "title",
+        "storeName",
+        "masterName",
+        "roomCode",
+        "deliveryFee",
+        "status",
+        "ownerId",
+        "memberUids",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "RoommateOrderItem": {
+      "title": "RoommateOrderItem",
+      "description": "An individual food or grocery item requested by a roommate in an order session.",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "description": "ID of the parent OrderSession",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "sessionOwnerId": {
+          "type": "string",
+          "description": "UID of the parent session owner",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorUid": {
+          "type": "string",
+          "description": "UID of the authenticated user who submitted this item",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "memberUids": {
+          "type": "array",
+          "description": "Bounded list of up to 10 roommate UIDs with read access"
+        },
+        "roommateName": {
+          "type": "string",
+          "description": "Display name of the roommate ordering the item",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "roomNumber": {
+          "type": "string",
+          "description": "Room or bed label in the dorm",
+          "minLength": 1,
+          "maxLength": 30
+        },
+        "itemName": {
+          "type": "string",
+          "description": "Name of the requested item (e.g., شيبسي, كشري, بيبسي)",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "normalizedItemKey": {
+          "type": "string",
+          "description": "Normalized Arabic key used to aggregate identical items for the Master",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "category": {
+          "type": "string",
+          "description": "Item category",
+          "enum": ["snacks", "meals", "drinks", "groceries", "other"]
+        },
+        "quantity": {
+          "type": "number",
+          "description": "Quantity of the item requested (1 to 100)"
+        },
+        "unitPrice": {
+          "type": "number",
+          "description": "Price per single unit in EGP"
+        },
+        "paymentMethod": {
+          "type": "string",
+          "description": "Whether the roommate is paying cash or digital wallet",
+          "enum": ["cash", "instapay", "wallet"]
+        },
+        "cashPaidAmount": {
+          "type": "number",
+          "description": "Amount of cash handed to the Master in EGP"
+        },
+        "isPaid": {
+          "type": "boolean",
+          "description": "Whether the roommate has settled payment for this item"
+        },
+        "isPurchased": {
+          "type": "boolean",
+          "description": "Whether the Master has bought this item"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional customization notes (e.g. بدون شطة, عائلي)",
+          "minLength": 0,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when item was created"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when item was updated"
+        }
+      },
+      "required": [
+        "sessionId",
+        "sessionOwnerId",
+        "authorUid",
+        "memberUids",
+        "roommateName",
+        "roomNumber",
+        "itemName",
+        "normalizedItemKey",
+        "category",
+        "quantity",
+        "unitPrice",
+        "paymentMethod",
+        "cashPaidAmount",
+        "isPaid",
+        "isPurchased",
+        "notes",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/sessions/{sessionId}": {
+      "schema": {
+        "$ref": "#/entities/OrderSession"
+      },
+      "description": "Stores shared dorm order sessions."
+    },
+    "/sessions/{sessionId}/orders/{orderId}": {
+      "schema": {
+        "$ref": "#/entities/RoommateOrderItem"
+      },
+      "description": "Stores individual roommate order items belonging to a specific order session."
+    }
+  }
+}

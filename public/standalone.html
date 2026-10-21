@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+  <meta name="theme-color" content="#0F172A" />
+  <title>STEM EL ARISH | طلبات السكن وتقفيل الحساب</title>
+  <!-- خطوط عربية واضحة من Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&family=IBM+Plex+Mono:wght@500;600;700&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet" />
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- مكتبة MQTT.js للمزامنة اللحظية بين الهواتف بدون سيرفر -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+  <style>
+    :root {
+      font-family: 'Tajawal', system-ui, -apple-system, sans-serif;
+    }
+    body {
+      background-color: #F8FAFC;
+      color: #0F172A;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+    h1, h2, h3, h4, .font-heading {
+      font-family: 'Cairo', sans-serif;
+    }
+    .font-mono-num {
+      font-family: 'IBM Plex Mono', monospace;
+      font-variant-numeric: tabular-nums;
+    }
+    @keyframes pulse-heart {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.2); }
+    }
+    .heart-beat {
+      display: inline-block;
+      animation: pulse-heart 1.5s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col bg-[#F8FAFC] text-[#0F172A]">
+
+  <!-- الشريط العلوي -->
+  <header class="sticky top-0 z-30 bg-[#0F172A] text-white border-b border-slate-800 shadow-sm">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+      <!-- الشعار والعنوان -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-slate-800 border border-amber-400/40 flex items-center justify-center shrink-0">
+          <svg viewBox="0 0 64 64" class="w-7 h-7" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M32 4L56 14V30C56 45.5 45.8 56.8 32 60C18.2 56.8 8 45.5 8 30V14L32 4Z" fill="#0F172A" stroke="#F59E0B" stroke-width="3.5"/>
+            <ellipse cx="32" cy="31" rx="16" ry="7" transform="rotate(-30 32 31)" stroke="#38BDF8" stroke-width="2"/>
+            <ellipse cx="32" cy="31" rx="16" ry="7" transform="rotate(30 32 31)" stroke="#38BDF8" stroke-width="2"/>
+            <circle cx="32" cy="31" r="3.5" fill="#F59E0B"/>
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] font-extrabold tracking-wider uppercase px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-400/30">
+              STEM EL ARISH
+            </span>
+            <span id="mqtt-status-badge" class="inline-flex items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300">
+              <span id="mqtt-status-dot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+              <span id="mqtt-status-text">جاري الاتصال...</span>
+            </span>
+          </div>
+          <h1 class="text-base sm:text-lg font-extrabold tracking-tight text-white mt-0.5 font-heading">
+            طلبات السكن المشتركة وتقفيل الحساب
+          </h1>
+        </div>
+      </div>
+
+      <!-- التبديل بين التبويبتين -->
+      <div class="flex items-center gap-2">
+        <div class="inline-flex rounded-xl bg-slate-800 p-1 border border-slate-700">
+          <button
+            type="button"
+            id="tab-btn-student"
+            onclick="switchTab('student')"
+            class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer bg-amber-500 text-slate-950"
+          >
+            اطلب الآن (الطلاب)
+          </button>
+          <button
+            type="button"
+            id="tab-btn-master"
+            onclick="switchTab('master')"
+            class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer text-slate-300 hover:text-white"
+          >
+            شاشة المشرف 👑
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- شريط كود غرفة السكن -->
+    <div class="bg-slate-900/90 border-t border-slate-800/80 px-4 py-2">
+      <div class="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div class="flex items-center gap-2">
+          <span class="text-slate-400">كود غرفة السكن للمزامنة:</span>
+          <span id="current-room-code-label" class="font-mono-num font-bold text-amber-300 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">sakan-orders-2026</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <input
+            id="room-code-input"
+            type="text"
+            dir="ltr"
+            value="sakan-orders-2026"
+            placeholder="sakan-orders-2026"
+            class="h-7 px-2.5 text-xs font-mono-num bg-slate-800 text-white border border-slate-700 rounded-lg focus:outline-none focus:border-amber-400 w-40"
+          />
+          <button
+            type="button"
+            onclick="changeRoomCode()"
+            class="h-7 px-2.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-[11px] font-bold cursor-pointer transition-colors"
+          >
+            تغيير الغرفة
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- إشعار التنبيهات -->
+  <div id="toast-container" class="max-w-5xl mx-auto w-full px-4 pt-3 hidden">
+    <div class="rounded-xl bg-slate-900 text-white px-4 py-2.5 text-xs sm:text-sm font-medium flex items-center justify-between shadow-md">
+      <span id="toast-text"></span>
+      <button type="button" onclick="hideToast()" class="text-amber-300 hover:text-white font-bold mr-4 cursor-pointer">إغلاق</button>
+    </div>
+  </div>
+
+  <!-- المحتوى الرئيسي -->
+  <main class="max-w-5xl mx-auto w-full px-4 pt-5 pb-12 flex-1">
+
+    <!-- ==================== التبويبة الأولى: اطلب الآن (الطلاب) ==================== -->
+    <section id="section-student" class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <!-- كارت تسجيل الطلب -->
+      <div class="lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
+        <div class="pb-4 border-b border-slate-100">
+          <h2 class="text-lg font-bold text-slate-900 font-heading">نسخة الطلاب — سجل طلبك</h2>
+          <p class="text-xs text-slate-500 mt-1">
+            اكتب اسمك، اختار أوضتك (404–410)، واكتب طلبك وسعره وهيوصل للمشرف في نفس اللحظة.
+          </p>
+        </div>
+
+        <form id="student-order-form" onsubmit="submitStudentOrder(event)" class="mt-4 space-y-4" novalidate>
+          <!-- اسم الطالب + اختيار الأوضة إجباري -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="sm:col-span-2">
+              <label for="student-name" class="block text-xs font-semibold text-slate-700 mb-1.5">
+                اسم الطالب <span class="text-rose-600">*</span>
+              </label>
+              <input
+                id="student-name"
+                type="text"
+                required
+                placeholder="اكتب اسمك..."
+                class="w-full h-11 px-3.5 text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900"
+              />
+            </div>
+
+            <div>
+              <label for="student-room" class="block text-xs font-semibold text-slate-700 mb-1.5">
+                الأوضة (404–410) <span class="text-rose-600">*</span>
+              </label>
+              <select
+                id="student-room"
+                required
+                class="w-full h-11 px-3 text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900 text-slate-800 font-semibold"
+              >
+                <option value="">اختر الأوضة...</option>
+                <option value="غرفة 404">غرفة 404</option>
+                <option value="غرفة 405">غرفة 405</option>
+                <option value="غرفة 406">غرفة 406</option>
+                <option value="غرفة 407">غرفة 407</option>
+                <option value="غرفة 408">غرفة 408</option>
+                <option value="غرفة 409">غرفة 409</option>
+                <option value="غرفة 410">غرفة 410</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- اسم الصنف (كتابة مباشرة بدون قوائم منسدلة أو إضافة صنف) -->
+          <div>
+            <label for="item-name" class="block text-xs font-semibold text-slate-700 mb-1.5">
+              الطلب (اسم الصنف) <span class="text-rose-600">*</span>
+            </label>
+            <input
+              id="item-name"
+              name="sakan_order_entry_no_history"
+              type="text"
+              required
+              autocomplete="off"
+              autocorrect="off"
+              autocapitalize="off"
+              spellcheck="false"
+              aria-autocomplete="none"
+              placeholder="اكتب الطلب (مثال: شيبسي / لبن / اندومي)..."
+              class="w-full h-11 px-3.5 text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900"
+            />
+          </div>
+
+          <!-- الكمية + سعر القطعة الواحدة + الإجمالي -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1.5">الكمية</label>
+              <div class="flex items-center h-11 border border-slate-300 rounded-xl overflow-hidden bg-white">
+                <button
+                  type="button"
+                  onclick="adjustFormQty(1)"
+                  class="min-w-[42px] h-full flex items-center justify-center text-base font-bold text-slate-700 hover:bg-slate-100 cursor-pointer"
+                >
+                  +
+                </button>
+                <input
+                  id="item-qty"
+                  type="number"
+                  min="1"
+                  max="100"
+                  value="1"
+                  oninput="recalcFormTotals()"
+                  class="w-full h-full text-center font-mono-num text-sm font-bold text-slate-900 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onclick="adjustFormQty(-1)"
+                  class="min-w-[42px] h-full flex items-center justify-center text-base font-bold text-slate-700 hover:bg-slate-100 cursor-pointer"
+                >
+                  −
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label for="item-price" class="block text-xs font-semibold text-slate-700 mb-1.5">
+                سعر الواحدة (ج.م)
+              </label>
+              <input
+                id="item-price"
+                type="number"
+                min="0.5"
+                step="0.5"
+                value="15"
+                oninput="recalcFormTotals()"
+                class="w-full h-11 px-3.5 text-sm font-mono-num bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900"
+              />
+            </div>
+
+            <div class="h-11 px-3.5 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-between">
+              <span class="text-xs font-medium text-slate-600">الإجمالي:</span>
+              <span id="form-line-total" class="text-sm font-bold font-mono-num text-slate-900">15 ج.م</span>
+            </div>
+          </div>
+
+          <!-- طريقة الدفع (كاش عادي أم محفظة / إنستا باي) -->
+          <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <span class="text-xs font-bold text-slate-800">طريقة الدفع:</span>
+              <div class="grid grid-cols-2 gap-1.5 p-1 bg-slate-200/70 rounded-lg">
+                <button
+                  type="button"
+                  id="pay-btn-cash"
+                  onclick="setPaymentMethod('cash')"
+                  class="min-h-[36px] px-3 py-1.5 text-xs font-bold rounded-md transition-colors cursor-pointer bg-white text-slate-900 shadow-xs"
+                >
+                  كاش 💵
+                </button>
+                <button
+                  type="button"
+                  id="pay-btn-wallet"
+                  onclick="setPaymentMethod('wallet')"
+                  class="min-h-[36px] px-3 py-1.5 text-xs font-bold rounded-md transition-colors cursor-pointer text-slate-600 hover:text-slate-900"
+                >
+                  محفظة / إنستا باي 📱
+                </button>
+              </div>
+            </div>
+
+            <!-- تفاصيل الكاش (بدون كلمة خالص لأن الطالب لسه في الأوضة) -->
+            <div id="cash-details-box" class="space-y-2 pt-2 border-t border-slate-200/80">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                <div>
+                  <label for="cash-bill-input" class="block text-xs font-semibold text-slate-700 mb-1">
+                    هتحضر ورقة بكام للمشرف؟ (ج.م)
+                  </label>
+                  <input
+                    id="cash-bill-input"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value="15"
+                    oninput="recalcFormTotals()"
+                    class="w-full h-10 px-3 text-sm font-mono-num bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  />
+                </div>
+                <div class="text-xs space-y-1">
+                  <div class="text-amber-800 font-semibold">
+                    حالة الدفع: لسه مدفعتش (المشرف هيستلم منك)
+                  </div>
+                  <div id="cash-change-preview" class="font-bold text-slate-800">
+                    المطلوب تجهيزه للمشرف: 15 ج.م كاش
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="wallet-details-box" class="hidden pt-2 border-t border-slate-200/80 flex items-center justify-between text-xs">
+              <span class="text-slate-600">المطلوب تحويله للمشرف:</span>
+              <span id="wallet-total-preview" class="font-bold font-mono-num text-rose-700">15 ج.م (لسه هتحول للمشرف)</span>
+            </div>
+          </div>
+
+          <div id="form-error-msg" class="hidden p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-800"></div>
+          <div id="form-success-msg" class="hidden p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800"></div>
+
+          <button
+            type="submit"
+            id="submit-order-btn"
+            class="w-full min-h-[48px] px-5 py-3 text-sm font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+          >
+            إرسال الطلب للمشرف
+          </button>
+        </form>
+      </div>
+
+      <!-- قائمة طلبات هذا الطالب على موبايله -->
+      <div class="lg:col-span-7 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
+          <div>
+            <h3 class="text-base font-bold text-slate-900 font-heading">طلباتي المسجلة من تليفوني</h3>
+            <p class="text-xs text-slate-500 mt-0.5">
+              تقدر تعدل الكمية أو تحذف طلبك قبل ما المشرف يشتري
+            </p>
+          </div>
+          <span id="my-orders-badge" class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-800 text-xs font-bold font-mono-num">
+            0 طلب
+          </span>
+        </div>
+
+        <div id="my-orders-container" class="space-y-2.5"></div>
+      </div>
+    </section>
+
+    <!-- ==================== التبويبة الثانية: شاشة المشرف 👑 ==================== -->
+    <section id="section-master" class="space-y-6 hidden">
+      <!-- قفل شاشة المشرف -->
+      <div id="master-lock-screen" class="max-w-md mx-auto mt-6 bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
+        <div class="flex items-center justify-between">
+          <span class="px-2.5 py-1 rounded-md bg-amber-50 text-amber-900 border border-amber-200 text-xs font-bold">
+            شاشة المشرف 👑
+          </span>
+          <span class="text-xs text-slate-400 font-mono-num">Passcode: 0902</span>
+        </div>
+        <h2 class="text-lg font-bold text-slate-900 font-heading">دخول شاشة المشرف وتجميع الطلبات</h2>
+        <p class="text-xs text-slate-600 leading-relaxed">
+          اكتب باسورد المشرف (<strong class="font-mono-num">0902</strong>) لفتح ملخص المحل المجمع وكشف حساب الزملاء:
+        </p>
+        <form onsubmit="unlockMasterScreen(event)" class="space-y-3">
+          <input
+            id="master-pass-input"
+            type="password"
+            inputmode="numeric"
+            dir="ltr"
+            placeholder="0902"
+            class="w-full h-11 px-3.5 text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900 font-mono-num text-center tracking-widest"
+          />
+          <p id="master-pass-error" class="hidden text-xs font-semibold text-rose-600"></p>
+          <button
+            type="submit"
+            class="w-full min-h-[44px] px-4 py-2.5 text-sm font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl cursor-pointer"
+          >
+            فتح شاشة المشرف
+          </button>
+        </form>
+      </div>
+
+      <!-- محتوى شاشة المشرف بعد الفتح -->
+      <div id="master-content" class="space-y-6 hidden">
+        <!-- بطاقة الإجمالي والأزرار السريعة -->
+        <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900 font-heading">إجمالي الأوردر الكلي (تحديث لحظي 🟢)</h2>
+              <p class="text-xs text-slate-500">جميع الطلبات المرسلة من غرف السكن (404–410)</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onclick="copyOrdersForWhatsApp()"
+                class="min-h-[40px] px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold cursor-pointer transition-colors"
+              >
+                نسخ الطلبات للواتساب 📋
+              </button>
+              <button
+                type="button"
+                onclick="showResetConfirmModal()"
+                class="min-h-[40px] px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold cursor-pointer transition-colors"
+              >
+                بدء أوردر جديد (تصفير الكل) 🗑️
+              </button>
+            </div>
+          </div>
+
+          <!-- نافذة تأكيد تصفير الأوردر (بدون window.confirm) -->
+          <div id="reset-confirm-box" class="hidden p-4 rounded-xl bg-rose-50 border border-rose-200 flex flex-wrap items-center justify-between gap-3">
+            <div class="text-xs font-bold text-rose-900">
+              هل أنت متأكد من مسح وتصفير كل الطلبات الحالية من السحابة عند جميع الهواتف؟
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                onclick="confirmResetAllOrders()"
+                class="px-3.5 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold cursor-pointer"
+              >
+                نعم، تصفير الكل الآن
+              </button>
+              <button
+                type="button"
+                onclick="hideResetConfirmModal()"
+                class="px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 text-xs font-bold cursor-pointer"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div class="p-3.5 rounded-xl bg-slate-900 text-white">
+              <div class="text-xs text-slate-300">إجمالي المطلوب للمحل</div>
+              <div id="m-total-store" class="text-lg font-extrabold font-mono-num text-amber-400 mt-1">0 ج.م</div>
+            </div>
+            <div class="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200">
+              <div class="text-xs text-emerald-800">إجمالي الكاش المجمع (تم الدفع)</div>
+              <div id="m-total-cash-collected" class="text-lg font-extrabold font-mono-num text-emerald-900 mt-1">0 ج.م</div>
+            </div>
+            <div class="p-3.5 rounded-xl bg-amber-50 border border-amber-200">
+              <div class="text-xs text-amber-900">كاش لسه هيستلمه المشرف</div>
+              <div id="m-total-cash-pending" class="text-lg font-extrabold font-mono-num text-amber-900 mt-1">0 ج.م</div>
+            </div>
+            <div class="p-3.5 rounded-xl bg-rose-50 border border-rose-200">
+              <div class="text-xs text-rose-800">محفظة / إنستا باي</div>
+              <div id="m-total-wallet" class="text-lg font-extrabold font-mono-num text-rose-900 mt-1">0 ج.م</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <!-- الجدول الأول: ملخص المحل / الكشك (تجميع الأصناف المتشابهة) -->
+          <div class="lg:col-span-6 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 class="text-base font-bold text-slate-900 font-heading">1. ملخص المحل / الكشك (مجمّع)</h3>
+                <p class="text-xs text-slate-500">تجميع الأصناف المتشابهة تلقائياً مع علامة صح وقت الشراء</p>
+              </div>
+              <span id="m-agg-count" class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-800 text-xs font-bold font-mono-num">
+                0 صنف
+              </span>
+            </div>
+            <div id="m-aggregated-table" class="space-y-2.5"></div>
+          </div>
+
+          <!-- الجدول الثاني: كشف حساب الزملاء والغرف -->
+          <div class="lg:col-span-6 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 class="text-base font-bold text-slate-900 font-heading">2. كشف حساب الزملاء والغرف</h3>
+                <p class="text-xs text-slate-500">الأصناف بالتفصيل، المبلغ المطلوب، الباقي، وزر تم الدفع ✅</p>
+              </div>
+              <span id="m-students-count" class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-800 text-xs font-bold font-mono-num">
+                0 طالب
+              </span>
+            </div>
+            <div id="m-students-table" class="space-y-3"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- الفوتر -->
+  <footer class="mt-auto border-t border-slate-200 bg-white py-4 px-4">
+    <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
+      <div class="font-bold text-slate-800">STEM EL ARISH — طلبات السكن المشتركة</div>
+      <div dir="ltr" class="inline-flex items-center gap-1.5 font-semibold text-slate-700 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
+        <span class="heart-beat text-red-500">❤️</span>
+        <span>Created by Yamen Elrayes</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ==================== الكود البرمجي الكامل (Single-File JS + MQTT) ==================== -->
+  <script>
+    // الإعدادات الأساسية
+    const BROKER_URL = 'wss://broker.emqx.io:8084/mqtt';
+    const DEFAULT_ROOM_CODE = 'sakan-orders-2026';
+    const STORAGE_DEVICE_ID = 'sakan_single_device_id_v1';
+    const STORAGE_STUDENT_NAME = 'sakan_saved_student_name_v1';
+    const STORAGE_ROOM_CODE = 'sakan_saved_room_code_v1';
+    const STORAGE_CACHE_ORDERS = 'sakan_cached_orders_v1';
+
+    let roomCode = localStorage.getItem(STORAGE_ROOM_CODE) || DEFAULT_ROOM_CODE;
+    let deviceId = getOrCreateDeviceId();
+    let paymentMethod = 'cash';
+    let isMasterUnlocked = false;
+    let ordersMap = loadCachedOrders();
+    let mqttClient = null;
+
+    function getOrCreateDeviceId() {
+      try {
+        let id = localStorage.getItem(STORAGE_DEVICE_ID);
+        if (!id) {
+          id = 'dev_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+          localStorage.setItem(STORAGE_DEVICE_ID, id);
+        }
+        return id;
+      } catch (e) {
+        return 'dev_local';
+      }
+    }
+
+    function loadCachedOrders() {
+      try {
+        const raw = localStorage.getItem(STORAGE_CACHE_ORDERS + '_' + roomCode);
+        return raw ? JSON.parse(raw) : {};
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function saveCachedOrders() {
+      try {
+        localStorage.setItem(STORAGE_CACHE_ORDERS + '_' + roomCode, JSON.stringify(ordersMap));
+      } catch (e) {}
+    }
+
+    // توحيد الحروف العربية (أ/إ/آ -> ا ، ة -> ه ، ى -> ي) ومسح المسافات الزائدة
+    function normalizeItemKey(text) {
+      return String(text || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[\u064B-\u065F\u0670]/g, '')
+        .replace(/[أإآ]/g, 'ا')
+        .replace(/ة/g, 'ه')
+        .replace(/ى/g, 'ي')
+        .replace(/\s+/g, ' ');
+    }
+
+    // الاتصال الفوري بالسيرفر المجاني عبر MQTT.js
+    function connectMqtt() {
+      if (typeof mqtt === 'undefined') {
+        updateMqttBadge('offline');
+        return;
+      }
+      if (mqttClient) {
+        try { mqttClient.end(true); } catch (e) {}
+      }
+
+      updateMqttBadge('connecting');
+      const clientId = 'sakan_client_' + Math.random().toString(16).slice(2, 10);
+      mqttClient = mqtt.connect(BROKER_URL, {
+        clientId: clientId,
+        clean: true,
+        connectTimeout: 8000,
+        reconnectPeriod: 3000
+      });
+
+      const topicPattern = 'sakan_app/' + roomCode + '/orders/+';
+
+      mqttClient.on('connect', function () {
+        updateMqttBadge('connected');
+        mqttClient.subscribe(topicPattern, { qos: 1 });
+      });
+
+      mqttClient.on('reconnect', function () {
+        updateMqttBadge('connecting');
+      });
+
+      mqttClient.on('offline', function () {
+        updateMqttBadge('offline');
+      });
+
+      mqttClient.on('message', function (topic, payloadBuffer) {
+        const prefix = 'sakan_app/' + roomCode + '/orders/';
+        if (!topic.startsWith(prefix)) return;
+        const orderId = topic.slice(prefix.length).trim();
+        if (!orderId) return;
+
+        const payloadStr = payloadBuffer.toString().trim();
+        if (!payloadStr) {
+          // رسالة فارغة "" تعني حذف الطلب من السحابة عند الجميع
+          delete ordersMap[orderId];
+        } else {
+          try {
+            const parsed = JSON.parse(payloadStr);
+            if (parsed && parsed.id) {
+              ordersMap[orderId] = parsed;
+            }
+          } catch (e) {}
+        }
+        saveCachedOrders();
+        renderAll();
+      });
+    }
+
+    function updateMqttBadge(state) {
+      const badge = document.getElementById('mqtt-status-badge');
+      const dot = document.getElementById('mqtt-status-dot');
+      const text = document.getElementById('mqtt-status-text');
+      if (!badge || !dot || !text) return;
+
+      if (state === 'connected') {
+        badge.className = 'inline-flex items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-400/30';
+        dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+        text.textContent = 'متصل بالسحابة 🟢';
+      } else {
+        badge.className = 'inline-flex items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-400/30';
+        dot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
+        text.textContent = 'جاري الاتصال 🟡';
+      }
+    }
+
+    function publishOrder(order) {
+      ordersMap[order.id] = order;
+      saveCachedOrders();
+      renderAll();
+      if (mqttClient) {
+        const topic = 'sakan_app/' + roomCode + '/orders/' + order.id;
+        mqttClient.publish(topic, JSON.stringify(order), { retain: true, qos: 1 });
+      }
+    }
+
+    function publishDeleteOrder(orderId) {
+      delete ordersMap[orderId];
+      const okEl = document.getElementById('form-success-msg');
+      if (okEl) okEl.classList.add('hidden');
+      saveCachedOrders();
+      renderAll();
+      if (mqttClient) {
+        const topic = 'sakan_app/' + roomCode + '/orders/' + orderId;
+        mqttClient.publish(topic, '', { retain: true, qos: 1 });
+      }
+    }
+
+    function changeRoomCode() {
+      const inp = document.getElementById('room-code-input');
+      const nextCode = (inp.value || '').trim() || DEFAULT_ROOM_CODE;
+      roomCode = nextCode;
+      localStorage.setItem(STORAGE_ROOM_CODE, roomCode);
+      document.getElementById('current-room-code-label').textContent = roomCode;
+      ordersMap = loadCachedOrders();
+      renderAll();
+      connectMqtt();
+      showToast('تم الانتقال إلى غرفة السكن: ' + roomCode);
+    }
+
+    // التبديل بين التبويبات
+    function switchTab(tab) {
+      const secStudent = document.getElementById('section-student');
+      const secMaster = document.getElementById('section-master');
+      const btnStudent = document.getElementById('tab-btn-student');
+      const btnMaster = document.getElementById('tab-btn-master');
+
+      if (tab === 'student') {
+        secStudent.classList.remove('hidden');
+        secMaster.classList.add('hidden');
+        btnStudent.className = 'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer bg-amber-500 text-slate-950';
+        btnMaster.className = 'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer text-slate-300 hover:text-white';
+      } else {
+        secStudent.classList.add('hidden');
+        secMaster.classList.remove('hidden');
+        btnMaster.className = 'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer bg-amber-500 text-slate-950';
+        btnStudent.className = 'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer text-slate-300 hover:text-white';
+      }
+      renderAll();
+    }
+
+    function unlockMasterScreen(e) {
+      e.preventDefault();
+      const val = (document.getElementById('master-pass-input').value || '').trim();
+      const err = document.getElementById('master-pass-error');
+      if (val === '0902' || val === '13072009') {
+        isMasterUnlocked = true;
+        err.classList.add('hidden');
+        renderAll();
+      } else {
+        err.textContent = 'الباسورد غير صحيح — باسورد المشرف هو 0902';
+        err.classList.remove('hidden');
+      }
+    }
+
+    // التحكم في نموذج الطالب
+    function adjustFormQty(delta) {
+      const inp = document.getElementById('item-qty');
+      const current = parseInt(inp.value, 10) || 1;
+      const next = Math.max(1, Math.min(100, current + delta));
+      inp.value = next;
+      const price = parseFloat(document.getElementById('item-price').value) || 0;
+      if (paymentMethod === 'cash' && price > 0) {
+        document.getElementById('cash-bill-input').value = Math.round(next * price * 100) / 100;
+      }
+      recalcFormTotals();
+    }
+
+    function setPaymentMethod(method) {
+      paymentMethod = method;
+      const btnCash = document.getElementById('pay-btn-cash');
+      const btnWallet = document.getElementById('pay-btn-wallet');
+      const cashBox = document.getElementById('cash-details-box');
+      const walletBox = document.getElementById('wallet-details-box');
+
+      if (method === 'cash') {
+        btnCash.className = 'min-h-[36px] px-3 py-1.5 text-xs font-bold rounded-md transition-colors cursor-pointer bg-white text-slate-900 shadow-xs';
+        btnWallet.className = 'min-h-[36px] px-3 py-1.5 text-xs font-bold rounded-md transition-colors cursor-pointer text-slate-600 hover:text-slate-900';
+        cashBox.classList.remove('hidden');
+        walletBox.classList.add('hidden');
+      } else {
+        btnWallet.className = 'min-h-[36px] px-3 py-1.5 text-xs font-bold rounded-md transition-colors cursor-pointer bg-rose-700 text-white shadow-xs';
+        btnCash.className = 'min-h-[36px] px-3 py-1.5 text-xs font-bold rounded-md transition-colors cursor-pointer text-slate-600 hover:text-slate-900';
+        cashBox.classList.add('hidden');
+        walletBox.classList.remove('hidden');
+      }
+      recalcFormTotals();
+    }
+
+    function recalcFormTotals() {
+      const qty = Math.max(1, parseInt(document.getElementById('item-qty').value, 10) || 1);
+      const price = Math.max(0, parseFloat(document.getElementById('item-price').value) || 0);
+      const total = Math.round(qty * price * 100) / 100;
+      const bill = Math.max(0, parseFloat(document.getElementById('cash-bill-input').value) || 0);
+      const change = Math.max(0, Math.round((bill - total) * 100) / 100);
+
+      document.getElementById('form-line-total').textContent = total + ' ج.م';
+      document.getElementById('wallet-total-preview').textContent = total + ' ج.م (لسه هتحول للمشرف)';
+
+      const changeEl = document.getElementById('cash-change-preview');
+      if (change > 0) {
+        changeEl.textContent = 'لما تدفع ' + bill + ' ج.م هيبقى ليك باقي: ' + change + ' ج.م';
+      } else {
+        changeEl.textContent = 'المطلوب تجهيزه للمشرف: ' + total + ' ج.م كاش';
+      }
+    }
+
+    function submitStudentOrder(e) {
+      e.preventDefault();
+      const nameEl = document.getElementById('student-name');
+      const roomEl = document.getElementById('student-room');
+      const itemEl = document.getElementById('item-name');
+      const qtyEl = document.getElementById('item-qty');
+      const priceEl = document.getElementById('item-price');
+      const billEl = document.getElementById('cash-bill-input');
+      const errEl = document.getElementById('form-error-msg');
+      const okEl = document.getElementById('form-success-msg');
+
+      const roommateName = (nameEl.value || '').trim();
+      const roomNumber = (roomEl.value || '').trim();
+      const itemName = (itemEl.value || '').trim();
+      const quantity = Math.max(1, parseInt(qtyEl.value, 10) || 1);
+      const unitPrice = parseFloat(priceEl.value);
+      const cashPaidAmount = paymentMethod === 'cash' ? Math.max(0, parseFloat(billEl.value) || 0) : 0;
+
+      errEl.classList.add('hidden');
+      okEl.classList.add('hidden');
+
+      if (!roommateName) {
+        errEl.textContent = 'من فضلك اكتب اسمك الأول.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      if (!roomNumber) {
+        errEl.textContent = 'من فضلك اختار الأوضة (404–410) زي ما بتكتب اسمك.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      if (!itemName) {
+        errEl.textContent = 'من فضلك اكتب اسم الطلب (الصنف).';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      if (!unitPrice || unitPrice <= 0) {
+        errEl.textContent = 'من فضلك اكتب سعر القطعة الواحدة بشكل صحيح.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      try {
+        localStorage.setItem(STORAGE_STUDENT_NAME, roommateName);
+      } catch (err) {}
+
+      const now = new Date().toISOString();
+      const orderId = 'ord_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+
+      // الطلب يبدأ دائماً غير خالص (isPaid: false) لأن الطالب في أوضته ولسه مسلمش الفلوس للمستر
+      const newOrder = {
+        id: orderId,
+        deviceId: deviceId,
+        roommateName: roommateName,
+        roomNumber: roomNumber,
+        itemName: itemName,
+        normalizedItemKey: normalizeItemKey(itemName),
+        quantity: quantity,
+        unitPrice: unitPrice,
+        paymentMethod: paymentMethod,
+        cashPaidAmount: cashPaidAmount,
+        isPaid: false,
+        isPurchased: false,
+        createdAt: now,
+        updatedAt: now
+      };
+
+      publishOrder(newOrder);
+
+      okEl.textContent = 'تم إرسال طلبك للمشرف بنجاح: ' + quantity + ' × ' + itemName + ' (' + roomNumber + ')';
+      okEl.classList.remove('hidden');
+      itemEl.value = '';
+      qtyEl.value = '1';
+      billEl.value = String(unitPrice);
+      recalcFormTotals();
+    }
+
+    // تعديل كمية طلب الطالب أو حذفه
+    function changeMyOrderQty(orderId, delta) {
+      const ord = ordersMap[orderId];
+      if (!ord) return;
+      const oldSub = Math.round(ord.quantity * ord.unitPrice * 100) / 100;
+      const nextQty = Math.max(1, Math.min(100, (ord.quantity || 1) + delta));
+      const newSub = Math.round(nextQty * ord.unitPrice * 100) / 100;
+      if (ord.paymentMethod === 'cash' && ord.cashPaidAmount === oldSub) {
+        ord.cashPaidAmount = newSub;
+      }
+      ord.quantity = nextQty;
+      ord.updatedAt = new Date().toISOString();
+      publishOrder(ord);
+    }
+
+    // دوال المستر (علامة صح على الصنف + علامة تم الدفع للزميل + تصفير الكل)
+    function toggleMasterItemPurchased(normKey) {
+      const all = Object.values(ordersMap).filter(function (o) {
+        return normalizeItemKey(o.itemName) === normKey;
+      });
+      if (all.length === 0) return;
+      const allChecked = all.every(function (o) { return Boolean(o.isPurchased); });
+      const targetState = !allChecked;
+      const now = new Date().toISOString();
+
+      all.forEach(function (o) {
+        o.isPurchased = targetState;
+        o.updatedAt = now;
+        publishOrder(o);
+      });
+    }
+
+    function toggleRoommatePaid(studentKey) {
+      const all = Object.values(ordersMap).filter(function (o) {
+        const k = normalizeItemKey(o.roommateName) + '__' + (o.roomNumber || '');
+        return k === studentKey;
+      });
+      if (all.length === 0) return;
+      const allPaid = all.every(function (o) { return Boolean(o.isPaid); });
+      const targetPaid = !allPaid;
+      const now = new Date().toISOString();
+
+      all.forEach(function (o) {
+        o.isPaid = targetPaid;
+        o.updatedAt = now;
+        publishOrder(o);
+      });
+    }
+
+    function showResetConfirmModal() {
+      document.getElementById('reset-confirm-box').classList.remove('hidden');
+    }
+
+    function hideResetConfirmModal() {
+      document.getElementById('reset-confirm-box').classList.add('hidden');
+    }
+
+    function confirmResetAllOrders() {
+      const ids = Object.keys(ordersMap);
+      ids.forEach(function (id) {
+        if (mqttClient) {
+          mqttClient.publish('sakan_app/' + roomCode + '/orders/' + id, '', { retain: true, qos: 1 });
+        }
+      });
+      ordersMap = {};
+      saveCachedOrders();
+      hideResetConfirmModal();
+      renderAll();
+      showToast('تم تصفير الأوردر بالكامل ومسحه من السحابة عند الجميع 🗑️');
+    }
+
+    function showToast(msg) {
+      const box = document.getElementById('toast-container');
+      const txt = document.getElementById('toast-text');
+      if (box && txt) {
+        txt.textContent = msg;
+        box.classList.remove('hidden');
+      }
+    }
+
+    function hideToast() {
+      document.getElementById('toast-container').classList.add('hidden');
+    }
+
+    // نسخ ملخص الطلبات للواتساب
+    function copyOrdersForWhatsApp() {
+      const list = Object.values(ordersMap);
+      if (list.length === 0) {
+        showToast('لا توجد طلبات حالياً لنسخها.');
+        return;
+      }
+
+      const aggregated = buildAggregatedItems(list);
+      const students = buildStudentStatements(list);
+      const totalStore = list.reduce(function (acc, o) {
+        return acc + Math.round(o.quantity * o.unitPrice * 100) / 100;
+      }, 0);
+
+      const lines = [
+        '📋 *أوردر سكن STEM EL ARISH (' + roomCode + ')*',
+        '━━━━━━━━━━━━━━━━━━',
+        '🛒 *أولاً: طلبات المحل المجمعة:*'
+      ];
+
+      aggregated.forEach(function (g, idx) {
+        const mark = g.isPurchased ? '✅' : '⬜';
+        lines.push(mark + ' ' + (idx + 1) + '. ' + g.displayName + ' | العدد: *' + g.totalQty + '* | الإجمالي: ' + g.totalPrice + ' ج.م');
+      });
+
+      lines.push('');
+      lines.push('👥 *ثانياً: كشف حساب الزملاء والغرف:*');
+      students.forEach(function (st) {
+        const paidTag = st.isPaid ? 'تم الدفع ✅' : 'لسه مدفعش ⏳';
+        const methodTag = st.paymentMethod === 'wallet' ? 'محفظة📱' : 'كاش💵';
+        lines.push('• *' + st.roommateName + '* (' + st.roomNumber + ') — مطلوب: ' + st.totalRequired + ' ج.م (' + methodTag + ' | ' + paidTag + ')');
+      });
+
+      lines.push('━━━━━━━━━━━━━━━━━━');
+      lines.push('💰 *إجمالي المطلوب للمحل:* ' + totalStore + ' ج.م');
+
+      navigator.clipboard.writeText(lines.join('\n')).then(function () {
+        showToast('تم نسخ الطلبات للواتساب بنجاح 📋');
+      });
+    }
+
+    function buildAggregatedItems(list) {
+      const map = {};
+      list.forEach(function (o) {
+        const key = normalizeItemKey(o.itemName);
+        const sub = Math.round(o.quantity * o.unitPrice * 100) / 100;
+        if (!map[key]) {
+          map[key] = {
+            key: key,
+            displayName: o.itemName.trim(),
+            totalQty: o.quantity,
+            unitPrice: o.unitPrice,
+            totalPrice: sub,
+            isPurchased: Boolean(o.isPurchased),
+            requesters: [o.roommateName + ' (' + o.roomNumber + ' ×' + o.quantity + ')']
+          };
+        } else {
+          map[key].totalQty += o.quantity;
+          map[key].totalPrice = Math.round((map[key].totalPrice + sub) * 100) / 100;
+          map[key].isPurchased = map[key].isPurchased && Boolean(o.isPurchased);
+          map[key].requesters.push(o.roommateName + ' (' + o.roomNumber + ' ×' + o.quantity + ')');
+        }
+      });
+      return Object.values(map);
+    }
+
+    function buildStudentStatements(list) {
+      const map = {};
+      list.forEach(function (o) {
+        const key = normalizeItemKey(o.roommateName) + '__' + (o.roomNumber || '');
+        const sub = Math.round(o.quantity * o.unitPrice * 100) / 100;
+        if (!map[key]) {
+          map[key] = {
+            key: key,
+            roommateName: o.roommateName,
+            roomNumber: o.roomNumber,
+            totalRequired: sub,
+            totalCashPrepared: o.paymentMethod === 'cash' ? (o.cashPaidAmount || sub) : 0,
+            paymentMethod: o.paymentMethod,
+            isPaid: Boolean(o.isPaid),
+            items: [o]
+          };
+        } else {
+          map[key].totalRequired = Math.round((map[key].totalRequired + sub) * 100) / 100;
+          if (o.paymentMethod === 'cash') {
+            map[key].totalCashPrepared = Math.round((map[key].totalCashPrepared + (o.cashPaidAmount || sub)) * 100) / 100;
+          }
+          map[key].isPaid = map[key].isPaid && Boolean(o.isPaid);
+          map[key].items.push(o);
+        }
+      });
+      return Object.values(map);
+    }
+
+    // تحديث الواجهة بالكامل
+    function renderAll() {
+      const allOrders = Object.values(ordersMap).sort(function (a, b) {
+        return (b.createdAt || '').localeCompare(a.createdAt || '');
+      });
+
+      // 1. طلبات هذا الطالب فقط
+      const myOrders = allOrders.filter(function (o) {
+        return o.deviceId === deviceId;
+      });
+      document.getElementById('my-orders-badge').textContent = myOrders.length + ' طلب';
+      const myContainer = document.getElementById('my-orders-container');
+
+      if (myOrders.length === 0) {
+        myContainer.innerHTML =
+          '<div class="p-8 text-center rounded-xl bg-slate-50 border border-dashed border-slate-200 text-xs text-slate-500">' +
+          'لسه مسجلتش أي طلبات من موبايلك في الأوردر الحالي.' +
+          '</div>';
+      } else {
+        myContainer.innerHTML = myOrders.map(function (o) {
+          const sub = Math.round(o.quantity * o.unitPrice * 100) / 100;
+          const paidBadge = o.isPaid
+            ? '<span class="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[11px] font-bold">استلم المشرف الفلوس ✅</span>'
+            : '<span class="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 text-[11px] font-bold">لسه في الأوضة (لم يُدفع بعد)</span>';
+
+          return (
+            '<div class="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3">' +
+              '<div>' +
+                '<div class="flex items-center gap-2 flex-wrap">' +
+                  '<span class="font-bold text-sm text-slate-900">' + o.itemName + '</span>' +
+                  '<span class="px-2 py-0.5 rounded bg-slate-900 text-white text-xs font-mono-num font-bold">×' + o.quantity + '</span>' +
+                  '<span class="px-2 py-0.5 rounded bg-slate-200 text-slate-700 text-[11px] font-bold">' + o.roomNumber + '</span>' +
+                  paidBadge +
+                '</div>' +
+                '<div class="text-xs text-slate-600 mt-1">' +
+                  'الطالب: <strong>' + o.roommateName + '</strong> • الإجمالي: <strong class="font-mono-num">' + sub + ' ج.م</strong> (' + (o.paymentMethod === 'wallet' ? 'محفظة 📱' : 'كاش 💵') + ')' +
+                '</div>' +
+              '</div>' +
+              '<div class="flex items-center gap-1.5">' +
+                '<button type="button" onclick="changeMyOrderQty(\'' + o.id + '\', 1)" class="w-8 h-8 rounded-lg bg-white border border-slate-300 font-bold text-slate-700 hover:bg-slate-100 cursor-pointer">+</button>' +
+                '<button type="button" onclick="changeMyOrderQty(\'' + o.id + '\', -1)" class="w-8 h-8 rounded-lg bg-white border border-slate-300 font-bold text-slate-700 hover:bg-slate-100 cursor-pointer">−</button>' +
+                '<button type="button" onclick="publishDeleteOrder(\'' + o.id + '\')" class="px-2.5 h-8 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold cursor-pointer">حذف</button>' +
+              '</div>' +
+            '</div>'
+          );
+        }).join('');
+      }
+
+      // 2. شاشة المستر
+      const lockScreen = document.getElementById('master-lock-screen');
+      const masterContent = document.getElementById('master-content');
+      if (!isMasterUnlocked) {
+        lockScreen.classList.remove('hidden');
+        masterContent.classList.add('hidden');
+        return;
+      }
+      lockScreen.classList.add('hidden');
+      masterContent.classList.remove('hidden');
+
+      let totalStore = 0;
+      let totalCashCollected = 0;
+      let totalCashPending = 0;
+      let totalWallet = 0;
+
+      allOrders.forEach(function (o) {
+        const sub = Math.round(o.quantity * o.unitPrice * 100) / 100;
+        totalStore = Math.round((totalStore + sub) * 100) / 100;
+        if (o.paymentMethod === 'wallet') {
+          totalWallet = Math.round((totalWallet + sub) * 100) / 100;
+        } else {
+          if (o.isPaid) {
+            totalCashCollected = Math.round((totalCashCollected + sub) * 100) / 100;
+          } else {
+            totalCashPending = Math.round((totalCashPending + sub) * 100) / 100;
+          }
+        }
+      });
+
+      document.getElementById('m-total-store').textContent = totalStore + ' ج.م';
+      document.getElementById('m-total-cash-collected').textContent = totalCashCollected + ' ج.م';
+      document.getElementById('m-total-cash-pending').textContent = totalCashPending + ' ج.م';
+      document.getElementById('m-total-wallet').textContent = totalWallet + ' ج.م';
+
+      // الجدول الأول: ملخص المحل المجمع
+      const aggregated = buildAggregatedItems(allOrders);
+      document.getElementById('m-agg-count').textContent = aggregated.length + ' صنف';
+      const aggEl = document.getElementById('m-aggregated-table');
+
+      if (aggregated.length === 0) {
+        aggEl.innerHTML = '<div class="p-8 text-center text-xs text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200">لا توجد أصناف مطلوبة حتى الآن.</div>';
+      } else {
+        aggEl.innerHTML = aggregated.map(function (g) {
+          return (
+            '<label class="p-3.5 rounded-xl border ' + (g.isPurchased ? 'bg-emerald-50/50 border-emerald-200' : 'bg-white border-slate-200') + ' flex items-start justify-between gap-3 cursor-pointer">' +
+              '<div class="flex items-start gap-3">' +
+                '<input type="checkbox" ' + (g.isPurchased ? 'checked' : '') + ' onchange="toggleMasterItemPurchased(\'' + g.key + '\')" class="mt-1 w-4 h-4 accent-emerald-600 rounded cursor-pointer" />' +
+                '<div>' +
+                  '<div class="flex items-center gap-2 flex-wrap">' +
+                    '<span class="font-bold text-sm ' + (g.isPurchased ? 'line-through text-slate-400' : 'text-slate-900') + '">الصنف: ' + g.displayName + '</span>' +
+                    '<span class="px-2 py-0.5 rounded-md bg-slate-900 text-white text-xs font-mono-num font-bold">إجمالي العدد: ' + g.totalQty + '</span>' +
+                  '</div>' +
+                  '<div class="text-xs text-slate-600 mt-1 font-mono-num">' +
+                    'سعر الواحدة: ' + g.unitPrice + ' ج.م | <strong>الإجمالي: ' + g.totalPrice + ' ج.م</strong>' +
+                  '</div>' +
+                  '<div class="text-[11px] text-slate-500 mt-1">' + g.requesters.join(' ، ') + '</div>' +
+                '</div>' +
+              '</div>' +
+            '</label>'
+          );
+        }).join('');
+      }
+
+      // الجدول الثاني: كشف حساب الزملاء
+      const students = buildStudentStatements(allOrders);
+      document.getElementById('m-students-count').textContent = students.length + ' طالب';
+      const stEl = document.getElementById('m-students-table');
+
+      if (students.length === 0) {
+        stEl.innerHTML = '<div class="p-8 text-center text-xs text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200">لا توجد طلبات زملاء حالياً.</div>';
+      } else {
+        stEl.innerHTML = students.map(function (st) {
+          const changeDue = st.paymentMethod === 'cash'
+            ? Math.max(0, Math.round((st.totalCashPrepared - st.totalRequired) * 100) / 100)
+            : 0;
+          const itemsTags = st.items.map(function (i) {
+            return i.itemName + ' (×' + i.quantity + ')';
+          }).join(' + ');
+
+          return (
+            '<div class="p-4 rounded-xl border ' + (st.isPaid ? 'bg-emerald-50/40 border-emerald-200' : 'bg-white border-slate-200') + ' space-y-2.5">' +
+              '<div class="flex items-center justify-between gap-2">' +
+                '<div>' +
+                  '<span class="font-bold text-sm text-slate-900">' + st.roommateName + '</span>' +
+                  '<span class="mr-2 px-2 py-0.5 rounded bg-slate-900 text-white text-xs font-bold">' + st.roomNumber + '</span>' +
+                '</div>' +
+                '<span class="px-2.5 py-0.5 rounded-md text-xs font-bold ' + (st.paymentMethod === 'wallet' ? 'bg-rose-50 text-rose-800 border border-rose-200' : 'bg-slate-100 text-slate-800') + '">' +
+                  (st.paymentMethod === 'wallet' ? 'محفظة / إنستا باي 📱' : 'كاش 💵') +
+                '</span>' +
+              '</div>' +
+              '<div class="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100">' +
+                'الأصناف: <strong>' + itemsTags + '</strong>' +
+              '</div>' +
+              '<div class="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">' +
+                '<div class="space-y-0.5">' +
+                  '<div>إجمالي المطلوب منه: <strong class="font-mono-num text-slate-900">' + st.totalRequired + ' ج.م</strong></div>' +
+                  (changeDue > 0 && !st.isPaid
+                    ? '<div class="text-amber-800 font-bold">محضر ورقة بـ ' + st.totalCashPrepared + ' ج.م — له باقي: ' + changeDue + ' ج.م</div>'
+                    : '') +
+                '</div>' +
+                '<button type="button" onclick="toggleRoommatePaid(\'' + st.key + '\')" class="px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer transition-colors ' +
+                  (st.isPaid ? 'bg-emerald-700 text-white' : 'bg-amber-500 hover:bg-amber-400 text-slate-950') + '">' +
+                  (st.isPaid ? 'تم الدفع ✅' : 'تأكيد استلام الفلوس (تم الدفع ✅)') +
+                '</button>' +
+              '</div>' +
+            '</div>'
+          );
+        }).join('');
+      }
+    }
+
+    // التهيئة عند فتح الملف
+    window.addEventListener('DOMContentLoaded', function () {
+      const savedName = localStorage.getItem(STORAGE_STUDENT_NAME);
+      if (savedName) {
+        document.getElementById('student-name').value = savedName;
+      }
+      document.getElementById('room-code-input').value = roomCode;
+      document.getElementById('current-room-code-label').textContent = roomCode;
+      recalcFormTotals();
+      renderAll();
+      connectMqtt();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Pure Black Full-Bleed Background (#000000) -->
+    <radialGradient id="amberGlow" cx="50%" cy="50%" r="45%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.22" />
+      <stop offset="65%" stop-color="#d97706" stop-opacity="0.05" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- 3D Golden Delivery Bag Gradient -->
+    <linearGradient id="bagGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fcd34d" />
+      <stop offset="45%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#b45309" />
+    </linearGradient>
+
+    <!-- Golden Crown Gradient -->
+    <linearGradient id="crownGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a" />
+      <stop offset="50%" stop-color="#facc15" />
+      <stop offset="100%" stop-color="#ca8a04" />
+    </linearGradient>
+
+    <!-- Emerald Check Badge Gradient -->
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+  </defs>
+
+  <!-- Pure Black Background (#000000) -->
+  <rect width="512" height="512" fill="#000000" />
+  <rect width="512" height="512" fill="url(#amberGlow)" />
+
+  <!-- Safe-Zone Centered Artwork -->
+  <g transform="translate(256, 260) scale(0.84) translate(-256, -256)">
+    <!-- Floating Supervisor Crown at Top -->
+    <g transform="translate(256, 108)">
+      <path
+        d="M-46,22 L-56,-18 L-22,4 L0,-28 L22,4 L56,-18 L46,22 Z"
+        fill="url(#crownGrad)"
+        stroke="#fef9c3"
+        stroke-width="3"
+        stroke-linejoin="round"
+      />
+      <circle cx="0" cy="-33" r="6.5" fill="#fef08a" />
+      <circle cx="-58" cy="-22" r="5.5" fill="#fde047" />
+      <circle cx="58" cy="-22" r="5.5" fill="#fde047" />
+    </g>
+
+    <!-- Main 3D Order Bag -->
+    <g>
+      <!-- Bag Handle -->
+      <path
+        d="M196,214 L196,174 C196,138 316,138 316,174 L316,214"
+        fill="none"
+        stroke="#ffffff"
+        stroke-width="20"
+        stroke-linecap="round"
+      />
+
+      <!-- Bag Body -->
+      <path
+        d="M132,196 L380,196 C392,196 401,206 399,218 L374,394 C371,411 357,424 340,424 L172,424 C155,424 141,411 138,394 L113,218 C111,206 120,196 132,196 Z"
+        fill="url(#bagGrad)"
+        stroke="#fde68a"
+        stroke-width="3.5"
+      />
+
+      <!-- Top Gloss Highlight -->
+      <path d="M116,212 L396,212 L393,234 L119,234 Z" fill="#fef3c7" opacity="0.28" />
+
+      <!-- Handle Anchors -->
+      <circle cx="196" cy="222" r="12" fill="#78350f" stroke="#fde68a" stroke-width="3" />
+      <circle cx="316" cy="222" r="12" fill="#78350f" stroke="#fde68a" stroke-width="3" />
+
+      <!-- Clean Checklist Symbol Inside Bag -->
+      <rect x="172" y="258" width="168" height="122" rx="26" fill="#0a0e1a" stroke="#fde68a" stroke-opacity="0.4" stroke-width="2.5" />
+      <!-- Line 1 -->
+      <circle cx="308" cy="296" r="11" fill="#10b981" />
+      <path d="M303,296 L307,300 L315,291" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+      <rect x="202" y="290" width="88" height="12" rx="6" fill="#f8fafc" />
+      <!-- Line 2 -->
+      <circle cx="308" cy="340" r="11" fill="#f59e0b" />
+      <path d="M303,340 L307,344 L315,335" fill="none" stroke="#0a0e1a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+      <rect x="220" y="334" width="70" height="12" rx="6" fill="#cbd5e1" />
+    </g>
+
+    <!-- Emerald Verified / Sync Badge (Bottom Right of Bag) -->
+    <g transform="translate(378, 396)">
+      <circle cx="0" cy="0" r="42" fill="url(#emeraldGrad)" stroke="#000000" stroke-width="6" />
+      <path d="M-15,1 L-4,12 L17,-10" fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+    </g>
+  </g>
+</svg>

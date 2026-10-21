@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: 'Cairo', 'Tajawal', sans-serif;
+  --font-sans: 'Tajawal', 'Cairo', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Cairo', 'Tajawal', sans-serif;
+}
+
+@layer base {
+  body {
+    font-family: 'Tajawal', 'Cairo', sans-serif;
+    background-color: #f8fafc;
+    color: #0f172a;
+  }
+
+  h1, h2, h3, h4, button, label, select, input {
+    font-family: 'Cairo', 'Tajawal', sans-serif;
+  }
+}
+
+.font-mono {
+  font-family: 'IBM Plex Mono', 'Cairo', 'Tajawal', sans-serif !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}

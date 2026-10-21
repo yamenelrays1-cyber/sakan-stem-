@@ -1,0 +1,45 @@
+{
+  "id": "/",
+  "name": "طلبات السكن",
+  "short_name": "طلبات السكن",
+  "description": "تطبيق مشترك لتجميع طلبات السكن بين الزمايل مع نسخة للطلاب ونسخة للمشرف.",
+  "theme_color": "#000000",
+  "background_color": "#000000",
+  "display": "standalone",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "dir": "rtl",
+  "lang": "ar",
+  "icons": [
+    {
+      "src": "/sakan-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/sakan-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/sakan-icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/sakan-icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon.svg?v=4",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

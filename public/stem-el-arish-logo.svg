@@ -1,0 +1,183 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="70 30 360 420" fill="none">
+  <!-- Pure White Background matching stem.jpg -->
+  <rect x="70" y="30" width="360" height="420" rx="24" fill="#FFFFFF"/>
+
+  <defs>
+    <!-- 9-Tooth Rounded Gear Path centered at (0,0) matching the reference image -->
+    <path
+      id="stem-gear"
+      d="M -5.5,-39 L 5.5,-39 L 7.5,-31 L 14,-28 L 20.5,-33.5 L 29,-26 L 24,-18.5 L 28,-12 L 36.5,-13 L 39,-2 L 30.5,2 L 29.5,9.5 L 37,14 L 32.5,24 L 24,21.5 L 18.5,27 L 21.5,35.5 L 11,39 L 6.5,31.5 L -1,31.5 L -5.5,39 L -16,36 L -14,27 L -19.5,22.5 L -28,26 L -33.5,16.5 L -27,11 L -29,3.5 L -37,1 L -36.5,-10 L -28,-10 L -24,-17.5 L -29.5,-24 L -22.5,-32.5 L -15,-27 L -8.5,-31 Z"
+      fill="#FFFFFF"
+      stroke="#8D926B"
+      stroke-width="5.2"
+      stroke-linejoin="round"
+      stroke-linecap="round"
+    />
+  </defs>
+
+  <!-- ==================== TOP ARCHED TEXT: S T E M ==================== -->
+  <g fill="#8D926B">
+    <!-- S -->
+    <g transform="translate(132, 86) rotate(-7)">
+      <path d="M-14,10 L-7,10 C-6,15 -2,17 3,17 C8,17 11,15 11,11 C11,7 7,6 -1,4 C-11,1 -17,-3 -17,-12 C-17,-21 -9,-27 2,-27 C10,-27 15,-24 18,-24 L18,-13 L11,-13 C10,-17 7,-19 2,-19 C-3,-19 -6,-17 -6,-13 C-6,-9 -2,-8 6,-6 C16,-3 22,1 22,10 C22,20 14,26 2,26 C-6,26 -11,23 -15,23 Z"/>
+    </g>
+    <!-- T -->
+    <g transform="translate(204, 77) rotate(-2)">
+      <path d="M-21,-26 L21,-26 L21,-13 L13,-13 L13,-18 L5,-18 L5,18 L12,18 L12,25 L-12,25 L-12,18 L-5,18 L-5,-18 L-13,-18 L-13,-13 L-21,-13 Z"/>
+    </g>
+    <!-- E -->
+    <g transform="translate(279, 77) rotate(2)">
+      <path d="M-20,-26 L18,-26 L18,-13 L10,-13 L10,-18 L-4,-18 L-4,-4 L9,-4 L9,4 L-4,4 L-4,17 L11,17 L11,11 L19,11 L19,25 L-20,25 L-20,18 L-14,18 L-14,-18 L-20,-18 Z"/>
+    </g>
+    <!-- M -->
+    <g transform="translate(362, 86) rotate(7)">
+      <path d="M-28,-26 L-12,-26 L0,4 L12,-26 L28,-26 L28,-19 L22,-19 L22,18 L28,18 L28,25 L9,25 L9,18 L14,18 L14,-11 L2,17 L-3,17 L-15,-11 L-15,18 L-9,18 L-9,25 L-28,25 L-28,18 L-22,18 L-22,-19 L-28,-19 Z"/>
+    </g>
+  </g>
+
+  <!-- ==================== 4 INTERLOCKING GEARS ==================== -->
+  <!-- 1. TOP GEAR (with Black Pi symbol) -->
+  <g transform="translate(248, 158)">
+    <use href="#stem-gear"/>
+    <!-- Bold Black Serif Pi (π) -->
+    <path
+      d="M-14,-11 C-10,-15 -6,-16 -1,-16 L16,-16 L16,-10 L9,-10 L8,7 C8,11 9,12 11,12 C12,12 14,11 15,9 L17,11 C15,16 11,18 7,18 C2,18 0,15 0,9 L1,-10 L-5,-10 C-6,2 -8,12 -10,16 C-11,18 -13,18 -15,17 C-17,16 -17,13 -15,10 C-12,5 -11,-2 -10,-10 L-12,-10 C-15,-10 -16,-9 -18,-6 L-20,-8 C-18,-10 -16,-11 -14,-11 Z"
+      fill="#000000"
+    />
+  </g>
+
+  <!-- 2. LEFT GEAR (with Blue Globe + Circuit icon) -->
+  <g transform="translate(184, 214) rotate(20)">
+    <use href="#stem-gear"/>
+    <g transform="rotate(-20)" stroke="#2389B0" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <!-- Outer Subtle Tech Frame -->
+      <path d="M-13,-17 L-4,-17 M4,-17 L11,-17 M-17,-9 L-17,9 M-13,17 L-4,17" stroke-width="1.2" opacity="0.75"/>
+      <!-- Left Half Globe -->
+      <path d="M0,-12 A12,12 0 0,0 0,12 Z"/>
+      <path d="M0,-12 C-5.5,-8.5 -5.5,8.5 0,12"/>
+      <line x1="-12" y1="0" x2="0" y2="0"/>
+      <line x1="-10" y1="-5.5" x2="0" y2="-5.5"/>
+      <line x1="-10" y1="5.5" x2="0" y2="5.5"/>
+      <!-- Right Circuit Traces & Nodes -->
+      <path d="M0,-8.5 L5.5,-8.5 L9.5,-12.5"/>
+      <circle cx="11" cy="-14" r="1.8" fill="#FFFFFF"/>
+      <path d="M0,-3 L8.5,-3 L12,-6.5"/>
+      <circle cx="14" cy="-8.5" r="1.8" fill="#FFFFFF"/>
+      <path d="M0,3 L13,3"/>
+      <circle cx="15.5" cy="3" r="1.8" fill="#FFFFFF"/>
+      <path d="M0,8.5 L6.5,8.5 L10.5,12.5"/>
+      <circle cx="12" cy="14" r="1.8" fill="#FFFFFF"/>
+      <path d="M3.5,-15 L3.5,15"/>
+    </g>
+  </g>
+
+  <!-- 3. RIGHT GEAR (with Teal-Green Atom icon) -->
+  <g transform="translate(312, 214) rotate(-15)">
+    <use href="#stem-gear"/>
+    <g transform="rotate(15)" stroke="#11998E" stroke-width="1.7" fill="none">
+      <ellipse cx="0" cy="0" rx="17" ry="6.2" transform="rotate(0)"/>
+      <ellipse cx="0" cy="0" rx="17" ry="6.2" transform="rotate(60)"/>
+      <ellipse cx="0" cy="0" rx="17" ry="6.2" transform="rotate(120)"/>
+      <!-- Nucleus -->
+      <circle cx="0" cy="0" r="2.6" fill="#11998E" stroke="none"/>
+      <!-- Electrons -->
+      <circle cx="-12" cy="-3.8" r="1.9" fill="#11998E" stroke="none"/>
+      <circle cx="11" cy="-8.5" r="1.9" fill="#11998E" stroke="none"/>
+      <circle cx="5.5" cy="13" r="1.9" fill="#11998E" stroke="none"/>
+      <circle cx="-7.5" cy="12" r="1.9" fill="#11998E" stroke="none"/>
+    </g>
+  </g>
+
+  <!-- 4. BOTTOM GEAR (with Outlined Purple A B C letters) -->
+  <g transform="translate(248, 270) rotate(8)">
+    <use href="#stem-gear"/>
+    <g transform="rotate(-8)" stroke="#6D4C9D" stroke-width="1.6" fill="none" stroke-linejoin="round" stroke-linecap="round">
+      <!-- Outlined 'A' (top-left) -->
+      <g transform="translate(-8, -8.5) rotate(-8)">
+        <path d="M0,-8.5 L6.5,7.5 L3.2,7.5 L1.8,3.8 L-2.8,3.8 L-4.2,7.5 L-7.5,7.5 L-1,-8.5 Z"/>
+        <path d="M-1.6,1 L0.9,1 L-0.3,-3.2 Z"/>
+      </g>
+      <!-- Outlined 'B' (middle-right) -->
+      <g transform="translate(8.5, -1) rotate(6)">
+        <path d="M-4.5,-7.5 L1.8,-7.5 C4.6,-7.5 6.5,-6 6.5,-3.8 C6.5,-1.8 5.4,-0.7 3.8,-0.2 C6,0.2 7.5,1.8 7.5,4.2 C7.5,7 5,8.5 1.8,8.5 L-4.5,8.5 Z"/>
+        <path d="M-1.3,-4.6 L1,-4.6 C2.2,-4.6 3,-4 3,-3 C3,-1.8 2.2,-1.3 1,-1.3 L-1.3,-1.3 Z"/>
+        <path d="M-1.3,1.3 L1.3,1.3 C2.8,1.3 3.7,2 3.7,3.3 C3.7,4.6 2.8,5.4 1.3,5.4 L-1.3,5.4 Z"/>
+      </g>
+      <!-- Outlined 'C' (bottom-center) -->
+      <g transform="translate(-2.5, 12.5) rotate(-5)">
+        <path d="M5.5,-3.8 C4.2,-5.4 2.2,-6 0,-6 C-4.2,-6 -7,-3.2 -7,1 C-7,5.2 -4.2,8 0,8 C2.2,8 4.4,7 6,5.2 L3.6,3 C2.5,4.2 1.3,4.8 0,4.8 C-2.2,4.8 -3.7,3.2 -3.7,1 C-3.7,-1.3 -2.2,-2.9 0,-2.9 C1.3,-2.9 2.5,-2.2 3.5,-1.3 Z"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- ==================== OLIVE LAUREL WREATH BRANCHES ==================== -->
+  <g transform="translate(0, 14)" fill="#8D926B" stroke="#8D926B">
+    <!-- Left Branch Stem -->
+    <path d="M261,357 C235,332 182,320 148,268" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+    <!-- Right Branch Stem -->
+    <path d="M235,357 C261,332 314,320 348,268" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+
+    <!-- Left Branch Leaves -->
+    <g stroke="none">
+      <!-- Tip leaf -->
+      <path d="M148,268 C142,261 140,253 143,249 C148,252 151,260 148,268 Z"/>
+      <!-- Pair 1 -->
+      <path d="M157,279 C147,277 140,272 139,267 C146,267 153,272 157,279 Z"/>
+      <path d="M159,277 C158,267 161,259 165,256 C166,263 164,271 159,277 Z"/>
+      <!-- Pair 2 -->
+      <path d="M171,293 C160,293 151,289 149,284 C156,283 165,286 171,293 Z"/>
+      <path d="M173,291 C171,280 173,272 178,268 C180,275 178,284 173,291 Z"/>
+      <!-- Pair 3 -->
+      <path d="M187,306 C176,308 166,305 163,300 C170,298 180,300 187,306 Z"/>
+      <path d="M189,304 C186,293 187,284 192,280 C194,287 193,297 189,304 Z"/>
+      <!-- Pair 4 -->
+      <path d="M204,318 C193,322 183,320 179,315 C186,312 196,313 204,318 Z"/>
+      <path d="M206,316 C202,305 202,296 206,292 C209,299 209,309 206,316 Z"/>
+      <!-- Pair 5 -->
+      <path d="M222,328 C211,334 201,333 196,329 C203,325 213,324 222,328 Z"/>
+      <path d="M224,326 C218,316 217,307 221,302 C225,309 226,318 224,326 Z"/>
+      <!-- Pair 6 -->
+      <path d="M240,338 C230,344 220,345 215,341 C221,336 231,335 240,338 Z"/>
+    </g>
+
+    <!-- Right Branch Leaves (mirrored across x=248) -->
+    <g transform="translate(496, 0) scale(-1, 1)" stroke="none">
+      <path d="M148,268 C142,261 140,253 143,249 C148,252 151,260 148,268 Z"/>
+      <path d="M157,279 C147,277 140,272 139,267 C146,267 153,272 157,279 Z"/>
+      <path d="M159,277 C158,267 161,259 165,256 C166,263 164,271 159,277 Z"/>
+      <path d="M171,293 C160,293 151,289 149,284 C156,283 165,286 171,293 Z"/>
+      <path d="M173,291 C171,280 173,272 178,268 C180,275 178,284 173,291 Z"/>
+      <path d="M187,306 C176,308 166,305 163,300 C170,298 180,300 187,306 Z"/>
+      <path d="M189,304 C186,293 187,284 192,280 C194,287 193,297 189,304 Z"/>
+      <path d="M204,318 C193,322 183,320 179,315 C186,312 196,313 204,318 Z"/>
+      <path d="M206,316 C202,305 202,296 206,292 C209,299 209,309 206,316 Z"/>
+      <path d="M222,328 C211,334 201,333 196,329 C203,325 213,324 222,328 Z"/>
+      <path d="M224,326 C218,316 217,307 221,302 C225,309 226,318 224,326 Z"/>
+      <path d="M240,338 C230,344 220,345 215,341 C221,336 231,335 240,338 Z"/>
+    </g>
+  </g>
+
+  <!-- ==================== BOTTOM ARCHED TEXT: A R I S H ==================== -->
+  <g fill="#8D926B">
+    <!-- A -->
+    <g transform="translate(142, 408) rotate(8)">
+      <path d="M-7,-26 L7,-26 L19,17 L24,17 L24,25 L5,25 L5,17 L9,17 L7,8 L-7,8 L-9,17 L-5,17 L-5,25 L-24,25 L-24,17 L-19,17 Z M-5,-1 L5,-1 L0,-16 Z"/>
+    </g>
+    <!-- R -->
+    <g transform="translate(201, 415) rotate(4)">
+      <path d="M-21,-26 L4,-26 C14,-26 20,-21 20,-12 C20,-5 16,0 9,2 L16,17 L22,17 L22,25 L8,25 L-1,4 L-6,4 L-6,17 L0,17 L0,25 L-21,25 L-21,17 L-15,17 L-15,-18 L-21,-18 Z M-6,-18 L-6,-4 L2,-4 C7,-4 10,-6 10,-11 C10,-16 7,-18 2,-18 Z"/>
+    </g>
+    <!-- I -->
+    <g transform="translate(249, 417) rotate(0)">
+      <path d="M-11,-26 L11,-26 L11,-18 L5,-18 L5,17 L11,17 L11,25 L-11,25 L-11,17 L-5,17 L-5,-18 L-11,-18 Z"/>
+    </g>
+    <!-- S -->
+    <g transform="translate(295, 415) rotate(-4)">
+      <path d="M-14,10 L-7,10 C-6,15 -2,17 3,17 C8,17 11,15 11,11 C11,7 7,6 -1,4 C-11,1 -17,-3 -17,-12 C-17,-21 -9,-27 2,-27 C10,-27 15,-24 18,-24 L18,-13 L11,-13 C10,-17 7,-19 2,-19 C-3,-19 -6,-17 -6,-13 C-6,-9 -2,-8 6,-6 C16,-3 22,1 22,10 C22,20 14,26 2,26 C-6,26 -11,23 -15,23 Z"/>
+    </g>
+    <!-- H -->
+    <g transform="translate(352, 408) rotate(-8)">
+      <path d="M-23,-26 L-4,-26 L-4,-18 L-9,-18 L-9,-5 L9,-5 L9,-18 L4,-18 L4,-26 L23,-26 L23,-18 L18,-18 L18,17 L23,17 L23,25 L4,25 L4,17 L9,17 L9,4 L-9,4 L-9,17 L-4,17 L-4,25 L-23,25 L-23,17 L-18,17 L-18,-18 L-23,-18 Z"/>
+    </g>
+  </g>
+</svg>

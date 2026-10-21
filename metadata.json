@@ -1,0 +1,6 @@
+{
+  "name": "طلبات السكن — تجميع أوردرات الزمايل",
+  "description": "تطبيق مشترك لتجميع طلبات الأكل والسوبرماركت بين زمايل السكن مع حساب المجموع التلقائي للمشرف ومتابعة الدفع الكاش.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (function () {
+        try {
+          if (localStorage.getItem('sakan_pwa_cache_v4') !== '1') {
+            localStorage.setItem('sakan_pwa_cache_v4', '1');
+            if ('caches' in window) {
+              caches.keys().then(function (keys) {
+                keys.forEach(function (k) { caches.delete(k); });
+              });
+            }
+          }
+        } catch (e) {}
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker
+            .register('/push-sw.js', { scope: '/', updateViaCache: 'none' })
+            .then(function (reg) {
+              reg.update().catch(function () {});
+            })
+            .catch(function () {});
+        }
+        var NativeWebSocket = window.WebSocket;
+        if (!NativeWebSocket) return;
+        function isViteSocket(url, protocols) {
+          var protoStr = Array.isArray(protocols) ? protocols.join(',') : String(protocols || '');
+          if (protoStr.indexOf('vite-hmr') !== -1 || protoStr.indexOf('vite-ping') !== -1) return true;
+          var urlStr = String(url || '');
+          if (urlStr.indexOf('__vite') !== -1 || urlStr.indexOf('vite-hmr') !== -1) return true;
+          if (location.hostname && urlStr.indexOf(location.hostname) !== -1 && urlStr.indexOf('emqx') === -1) return true;
+          return false;
+        }
+        var MockViteWebSocket = function (url, protocols) {
+          if (!isViteSocket(url, protocols)) {
+            return protocols !== undefined
+              ? new NativeWebSocket(url, protocols)
+              : new NativeWebSocket(url);
+          }
+          var target = new EventTarget();
+          var mock = {
+            url: String(url || ''),
+            protocol: Array.isArray(protocols) ? (protocols[0] || '') : String(protocols || ''),
+            readyState: 1,
+            bufferedAmount: 0,
+            extensions: '',
+            binaryType: 'blob',
+            CONNECTING: 0,
+            OPEN: 1,
+            CLOSING: 2,
+            CLOSED: 3,
+            send: function () {},
+            close: function () { this.readyState = 3; },
+            addEventListener: target.addEventListener.bind(target),
+            removeEventListener: target.removeEventListener.bind(target),
+            dispatchEvent: target.dispatchEvent.bind(target),
+            onopen: null,
+            onmessage: null,
+            onerror: null,
+            onclose: null
+          };
+          setTimeout(function () {
+            var evt = new Event('open');
+            if (typeof mock.onopen === 'function') mock.onopen(evt);
+            target.dispatchEvent(evt);
+          }, 10);
+          return mock;
+        };
+        MockViteWebSocket.prototype = NativeWebSocket.prototype;
+        MockViteWebSocket.CONNECTING = 0;
+        MockViteWebSocket.OPEN = 1;
+        MockViteWebSocket.CLOSING = 2;
+        MockViteWebSocket.CLOSED = 3;
+        window.WebSocket = MockViteWebSocket;
+
+        window.addEventListener('unhandledrejection', function (event) {
+          var msg = event && event.reason && (event.reason.message || String(event.reason));
+          if (typeof msg === 'string' && msg.indexOf('WebSocket closed without opened') !== -1) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+      })();
+    </script>
+    <title>طلبات السكن</title>
+    <meta name="description" content="تطبيق مشترك لتجميع طلبات الأكل والسوبرماركت بين زمايل السكن مع حساب المجموع التلقائي للمشرف والباقي بالكاش." />
+    <meta property="og:title" content="طلبات السكن" />
+    <meta property="og:description" content="تطبيق مشترك لتجميع طلبات الأكل والسوبرماركت بين زمايل السكن مع حساب المجموع التلقائي للمشرف والباقي بالكاش." />
+    <meta property="og:image" content="/app-poster.svg" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="طلبات السكن" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=4" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/sakan-icon-512.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/sakan-icon-192.png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg?v=4" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cairo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@500;600;700&family=Tajawal:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="bg-slate-50 text-slate-900 antialiased selection:bg-amber-600 selection:text-white">
+    <div id="root"></div>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
