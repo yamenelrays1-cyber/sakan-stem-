@@ -1,21 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import {
-  DORM_ROOMS,
   type DormRoom,
   type OrderCategory,
   type PaymentMethod,
 } from '../types/orders';
 import { validateOrderItemInput } from '../utils/orderAggregator';
+import { normalizeDormRoomInput } from '../utils/emailOtpService';
 
 export const SAVED_STUDENT_NAME_KEY = 'sakan_saved_student_name_v2';
 export const SAVED_STUDENT_ROOM_KEY = 'sakan_saved_student_room_v2';
+export const SAVED_STUDENT_EMAIL_KEY = 'sakan_saved_student_email_v2';
 
 interface OrderFormCardProps {
   formRef?: React.RefObject<HTMLFormElement | null>;
   nameInputRef?: React.RefObject<HTMLInputElement | null>;
   isOrdersLocked?: boolean;
+  isDeliveryEnabled?: boolean;
+  deliveryFee?: number;
   savedStudentName?: string;
   savedStudentRoom?: DormRoom | '';
+  savedStudentEmail?: string;
   ordersCount?: number;
   deleteSignal?: number;
   onEditStudentProfile?: () => void;
@@ -37,11 +41,13 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
   formRef,
   nameInputRef,
   isOrdersLocked = false,
+  isDeliveryEnabled = false,
+  deliveryFee = 0,
   savedStudentName,
   savedStudentRoom,
+  savedStudentEmail,
   ordersCount = 0,
   deleteSignal = 0,
-  onEditStudentProfile,
   onAddOrder,
 }) => {
   const [roommateName, setRoommateName] = useState<string>(() => {
@@ -53,13 +59,14 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
     }
   });
 
-  const [roomNumber, setRoomNumber] = useState<DormRoom | ''>(() => {
-    if (savedStudentRoom && DORM_ROOMS.includes(savedStudentRoom)) {
-      return savedStudentRoom;
+  const [roomNumber, setRoomNumber] = useState<string>(() => {
+    const normalizedProp = savedStudentRoom ? normalizeDormRoomInput(savedStudentRoom) : '';
+    if (normalizedProp) {
+      return normalizedProp;
     }
     try {
       const stored = localStorage.getItem(SAVED_STUDENT_ROOM_KEY) || '';
-      return DORM_ROOMS.includes(stored as DormRoom) ? (stored as DormRoom) : '';
+      return normalizeDormRoomInput(stored) || '';
     } catch {
       return '';
     }
@@ -112,20 +119,22 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
 
   useEffect(() => {
     try {
-      if (roomNumber) {
-        localStorage.setItem(SAVED_STUDENT_ROOM_KEY, roomNumber);
+      const normalized = normalizeDormRoomInput(roomNumber);
+      if (normalized) {
+        localStorage.setItem(SAVED_STUDENT_ROOM_KEY, normalized);
       }
     } catch {
       // ignore
     }
   }, [roomNumber]);
 
-  const hasSavedProfile = Boolean(
-    roommateName.trim() && roomNumber && DORM_ROOMS.includes(roomNumber as DormRoom)
-  );
+  const normalizedActiveRoom = normalizeDormRoomInput(roomNumber);
+  const hasSavedProfile = Boolean(roommateName.trim() && normalizedActiveRoom);
 
   const numericUnitPrice = Number(unitPrice) > 0 ? Number(unitPrice) : 0;
   const lineTotal = Math.round(quantity * numericUnitPrice * 100) / 100;
+  const activeDeliveryAmount =
+    isDeliveryEnabled && deliveryFee > 0 ? Math.round(deliveryFee * 100) / 100 : 0;
 
   const handleQuantityChange = (newQty: number) => {
     const clamped = Math.max(1, Math.min(100, newQty));
@@ -136,14 +145,13 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
     setUnitPrice(val);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const executeOrderSubmit = async (): Promise<boolean> => {
     setValidationError(null);
     setSuccessMessage(null);
 
     if (isOrdersLocked) {
       setValidationError('الطلبات مقفولة حالياً من المشرف — لا يمكن إضافة طلبات جديدة.');
-      return;
+      return false;
     }
 
     const validation = validateOrderItemInput({
@@ -160,7 +168,7 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
 
     if (!validation.valid || !validation.sanitized) {
       setValidationError(validation.error || 'بيانات الطلب غير مكتملة.');
-      return;
+      return false;
     }
 
     setItemName('');
@@ -169,10 +177,16 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
 
     const addedSummary = `${validation.sanitized.quantity} × ${validation.sanitized.itemName}`;
     setSuccessMessage(
-      `تمت إضافة (${addedSummary}) لطلباتك — تقدر تضيف طلب تاني أو تحدد المبلغ اللي هتجهزه تحت.`
+      `تمت إضافة (${addedSummary}) لطلباتك — تقدر تضيف طلب تاني أو تحدد المبلغ اللي هتجهزه وتبعت الطلب تحت.`
     );
     setQuantity(1);
     setIsEditingProfileInline(false);
+    return true;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await executeOrderSubmit();
   };
 
   return (
@@ -180,16 +194,35 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
       <div className="pb-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-lg font-bold text-slate-900">نسخة الطلاب — سجل طلباتك</h1>
-          <p className="text-xs text-slate-500 mt-1">
-            ضيف كل الطلبات اللي عايزها الأول، وبعدها حدد تحت في قائمة طلباتك هتجهز كام للمشرف مرة واحدة.
-          </p>
         </div>
-        {isOrdersLocked && (
-          <span className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold">
-            الطلبات مقفولة
-          </span>
-        )}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {activeDeliveryAmount > 0 && (
+            <span className="px-2.5 py-1 rounded-lg bg-amber-100 text-amber-900 border border-amber-200 text-xs font-bold font-mono tabular-nums">
+              🛵 الدليفري: {activeDeliveryAmount} ج.م
+            </span>
+          )}
+          {isOrdersLocked && (
+            <span className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold">
+              الطلبات مقفولة
+            </span>
+          )}
+        </div>
       </div>
+
+      {/* Delivery Fee Notice Before Sending the Order */}
+      {activeDeliveryAmount > 0 && (
+        <div
+          id="student-delivery-fee-banner"
+          className="mt-4 p-3 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-2 text-xs"
+        >
+          <span className="font-bold text-amber-900">
+            🛵 فلوس الدليفري المحددة من المشرف:
+          </span>
+          <span className="font-extrabold font-mono tabular-nums text-amber-900 bg-white px-2.5 py-1 rounded-lg border border-amber-200">
+            {activeDeliveryAmount} ج.م (تُضاف مرة واحدة على إجمالي طلبك)
+          </span>
+        </div>
+      )}
 
       {isOrdersLocked && (
         <div
@@ -203,29 +236,24 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
       <form ref={formRef} onSubmit={handleSubmit} autoComplete="off" className="mt-4 space-y-4" noValidate>
         {/* Saved Student Identity Bar OR Editable Name + Room Fields */}
         {hasSavedProfile && !isEditingProfileInline ? (
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 flex flex-wrap items-center justify-between gap-2">
+          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
               <span className="text-slate-500 font-medium">مسجل باسم:</span>
               <span className="font-extrabold text-slate-900">{roommateName}</span>
               <span className="text-slate-300" aria-hidden="true">·</span>
               <span className="px-2.5 py-0.5 rounded-lg bg-slate-200/80 text-slate-800 font-bold text-xs">
-                {roomNumber}
+                {normalizedActiveRoom || roomNumber}
               </span>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                if (onEditStudentProfile) {
-                  onEditStudentProfile();
-                } else {
-                  setIsEditingProfileInline(true);
-                }
-              }}
-              className="text-xs font-bold text-amber-800 hover:text-amber-900 underline cursor-pointer"
-            >
-              تغيير الاسم أو الأوضة
-            </button>
+            {savedStudentEmail && (
+              <span
+                dir="ltr"
+                className="text-xs font-mono text-slate-500 bg-white px-2.5 py-1 rounded-lg border border-slate-200"
+              >
+                {savedStudentEmail}
+              </span>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200">
@@ -251,28 +279,22 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
 
             <div>
               <label htmlFor="room-number-select" className="block text-xs font-semibold text-slate-700 mb-1.5">
-                الأوضة <span className="text-rose-600">*</span>
+                رقم الغرفة <span className="text-rose-600">*</span>
               </label>
-              <select
+              <input
                 id="room-number-select"
+                type="text"
+                inputMode="numeric"
                 required
                 disabled={isOrdersLocked}
+                placeholder="رقم الغرفة"
                 value={roomNumber}
                 onChange={(e) => {
-                  setRoomNumber(e.target.value as DormRoom | '');
+                  setRoomNumber(e.target.value);
                   setValidationError(null);
                 }}
-                className={`w-full h-11 px-3 text-sm bg-white border rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900 ${
-                  roomNumber === '' ? 'text-slate-500 border-slate-300' : 'text-slate-900 font-semibold border-slate-300'
-                }`}
-              >
-                <option value="">اختر الأوضة...</option>
-                {DORM_ROOMS.map((room) => (
-                  <option key={room} value={room}>
-                    {room}
-                  </option>
-                ))}
-              </select>
+                className="w-full h-11 px-3.5 text-sm bg-white border border-slate-300 rounded-xl text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:bg-slate-100 disabled:text-slate-400"
+              />
             </div>
           </div>
         )}
@@ -298,7 +320,7 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
             data-form-type="other"
             data-lpignore="true"
             disabled={isOrdersLocked}
-            placeholder="اكتب الطلب (مثال: شيبسي، بيبسي، إندومي)..."
+            placeholder="اسم الصنف"
             value={itemName}
             onChange={(e) => {
               setItemName(e.target.value);
@@ -383,15 +405,20 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
           </div>
         )}
 
-        <button
-          type="submit"
-          disabled={isOrdersLocked}
-          className="w-full min-h-[48px] px-5 py-3 text-sm font-bold text-white bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 disabled:cursor-not-allowed rounded-xl transition-colors whitespace-nowrap cursor-pointer"
-        >
-          {isOrdersLocked
-            ? 'الطلبات مقفولة حالياً من المشرف'
-            : `+ إضافة لطلباتك (${lineTotal} ج.م)`}
-        </button>
+        <div className="pt-1 flex justify-center">
+          <button
+            id="order-form-submit-btn"
+            type="submit"
+            disabled={isOrdersLocked}
+            className="w-full h-12 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-[0.99] text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-md disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed cursor-pointer"
+          >
+            {isOrdersLocked ? (
+              <span>الطلبات مقفولة حالياً من المشرف</span>
+            ) : (
+              <span>إضافة لطلباتك ({lineTotal} ج.م)</span>
+            )}
+          </button>
+        </div>
       </form>
     </div>
   );

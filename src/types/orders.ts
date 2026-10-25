@@ -66,6 +66,12 @@ export interface AggregatedRequester {
   notes: string;
 }
 
+export interface MasterItemPriceTier {
+  unitPrice: number;
+  quantity: number;
+  subtotal: number;
+}
+
 export interface MasterAggregatedItem {
   normalizedKey: string;
   displayName: string;
@@ -74,6 +80,7 @@ export interface MasterAggregatedItem {
   purchasedQuantity: number;
   unitPrice: number;
   hasMixedUnitPrices: boolean;
+  priceBreakdown: MasterItemPriceTier[];
   totalCost: number;
   allPurchased: boolean;
   requesters: AggregatedRequester[];

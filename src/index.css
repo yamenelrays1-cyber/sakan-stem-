@@ -7,15 +7,167 @@
 }
 
 @layer base {
+  :root {
+    color-scheme: dark;
+  }
+
   body {
     font-family: 'Tajawal', 'Cairo', sans-serif;
-    background-color: #f8fafc;
-    color: #0f172a;
+    background-color: #090b10;
+    color: #f1f5f9;
   }
 
   h1, h2, h3, h4, button, label, select, input {
     font-family: 'Cairo', 'Tajawal', sans-serif;
   }
+}
+
+/* Light / White Theme (#top[data-theme="light"]) */
+#top[data-theme="light"] {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+  color-scheme: light;
+}
+
+/* Global Dark Theme overrides (#top[data-theme="dark"]) */
+#top[data-theme="dark"] {
+  background-color: #090b10 !important;
+  color: #f8fafc !important;
+  color-scheme: dark;
+}
+
+#top[data-theme="dark"] .bg-white,
+#top[data-theme="dark"] .bg-white\/95 {
+  background-color: #131620 !important;
+  color: #f8fafc !important;
+}
+
+#top[data-theme="dark"] .bg-slate-50,
+#top[data-theme="dark"] .bg-slate-50\/80 {
+  background-color: #0d1017 !important;
+}
+
+#top[data-theme="dark"] .bg-slate-100 {
+  background-color: #1e2436 !important;
+  color: #f8fafc !important;
+}
+
+#top[data-theme="dark"] .bg-slate-200,
+#top[data-theme="dark"] .bg-slate-200\/70,
+#top[data-theme="dark"] .bg-slate-200\/80 {
+  background-color: #283046 !important;
+  color: #f8fafc !important;
+}
+
+#top[data-theme="dark"] .bg-amber-50,
+#top[data-theme="dark"] .bg-amber-50\/60,
+#top[data-theme="dark"] .bg-amber-50\/70,
+#top[data-theme="dark"] .bg-amber-50\/80,
+#top[data-theme="dark"] .bg-amber-50\/90,
+#top[data-theme="dark"] .bg-amber-100 {
+  background-color: rgba(245, 158, 11, 0.18) !important;
+  border-color: rgba(251, 191, 36, 0.42) !important;
+  color: #fef3c7 !important;
+}
+
+#top[data-theme="dark"] .bg-emerald-50,
+#top[data-theme="dark"] .bg-emerald-50\/70,
+#top[data-theme="dark"] .bg-emerald-50\/80,
+#top[data-theme="dark"] .bg-emerald-100 {
+  background-color: rgba(16, 185, 129, 0.18) !important;
+  border-color: rgba(52, 211, 153, 0.42) !important;
+  color: #d1fae5 !important;
+}
+
+#top[data-theme="dark"] .bg-rose-50,
+#top[data-theme="dark"] .bg-rose-50\/80,
+#top[data-theme="dark"] .bg-rose-100 {
+  background-color: rgba(244, 63, 94, 0.18) !important;
+  border-color: rgba(251, 113, 133, 0.42) !important;
+  color: #ffe4e6 !important;
+}
+
+#top[data-theme="dark"] .border-slate-100,
+#top[data-theme="dark"] .border-slate-200,
+#top[data-theme="dark"] .border-slate-200\/80,
+#top[data-theme="dark"] .border-slate-200\/90,
+#top[data-theme="dark"] .border-slate-300 {
+  border-color: rgba(255, 255, 255, 0.13) !important;
+}
+
+#top[data-theme="dark"] .divide-slate-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+#top[data-theme="dark"] .text-slate-900,
+#top[data-theme="dark"] .text-slate-800 {
+  color: #f8fafc !important;
+}
+
+#top[data-theme="dark"] .text-slate-700,
+#top[data-theme="dark"] .text-slate-600 {
+  color: #e2e8f0 !important;
+}
+
+#top[data-theme="dark"] .text-slate-500,
+#top[data-theme="dark"] .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+#top[data-theme="dark"] .text-amber-700,
+#top[data-theme="dark"] .text-amber-800,
+#top[data-theme="dark"] .text-amber-900 {
+  color: #fde047 !important;
+}
+
+#top[data-theme="dark"] .text-emerald-700,
+#top[data-theme="dark"] .text-emerald-800,
+#top[data-theme="dark"] .text-emerald-900,
+#top[data-theme="dark"] .text-emerald-950 {
+  color: #6ee7b7 !important;
+}
+
+#top[data-theme="dark"] .text-rose-700,
+#top[data-theme="dark"] .text-rose-800,
+#top[data-theme="dark"] .text-rose-900 {
+  color: #fda4af !important;
+}
+
+/* Keep dark text on bright gold/amber buttons */
+#top[data-theme="dark"] .text-slate-950 {
+  color: #090b10 !important;
+}
+
+/* Make bg-slate-900 buttons/pills stand out clearly on dark cards */
+#top[data-theme="dark"] button.bg-slate-900,
+#top[data-theme="dark"] span.bg-slate-900 {
+  background-color: #252d42 !important;
+  color: #fde047 !important;
+  border: 1px solid rgba(250, 204, 21, 0.45) !important;
+}
+
+#top[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
+#top[data-theme="dark"] select,
+#top[data-theme="dark"] textarea {
+  background-color: #1b1f2c !important;
+  color: #f8fafc !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+}
+
+#top[data-theme="dark"] option,
+#entry-screen option {
+  background-color: #131620 !important;
+  color: #f8fafc !important;
+}
+
+#top[data-theme="light"] option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+#top[data-theme="dark"] input::placeholder,
+#top[data-theme="dark"] textarea::placeholder {
+  color: #94a3b8 !important;
 }
 
 .font-mono {
@@ -25,4 +177,337 @@
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+
+
+/* ==========================================================================
+ * Interactive Snack Order Button (7-Step CSS Keyframe + Class Toggle System)
+ * ========================================================================== */
+.snack-order-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 220px;
+  height: 62px;
+  padding: 0 28px;
+  border-radius: 9999px;
+  background: linear-gradient(145deg, #161821 0%, #0b0c10 100%) !important;
+  color: #ffffff !important;
+  border: 2px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow:
+    0 14px 32px rgba(11, 12, 16, 0.35),
+    inset 0 1px 1px rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  overflow: visible;
+  user-select: none;
+  transition:
+    transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.25s ease,
+    border-color 0.25s ease;
+}
+
+.snack-order-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(250, 204, 21, 0.55) !important;
+  box-shadow:
+    0 18px 38px rgba(11, 12, 16, 0.45),
+    0 0 20px rgba(250, 204, 21, 0.18);
+}
+
+.snack-order-btn:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+.snack-order-btn:focus-visible {
+  outline: 3px solid #facc15 !important;
+  outline-offset: 4px !important;
+}
+
+.snack-order-btn.is-animating {
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Inner idle layout: bag on left, "Order" text on right */
+.snack-btn-idle-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  direction: ltr;
+}
+
+/* 1. Text fades out on click */
+.snack-btn-label {
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #ffffff;
+  white-space: nowrap;
+  transition:
+    opacity 0.28s ease,
+    transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.snack-order-btn.is-animating .snack-btn-label {
+  opacity: 0;
+  transform: translateX(14px) scale(0.88);
+}
+
+/* 2, 3, 5. Chips bag wrapper with multi-stage keyframe sequence */
+.snack-bag-actor {
+  position: relative;
+  z-index: 6;
+  width: 38px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center center;
+  will-change: transform, opacity;
+}
+
+.snack-order-btn.is-animating .snack-bag-actor {
+  animation: snackBagJourney 2.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes snackBagJourney {
+  /* Start at left side */
+  0% {
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  /* Step 2 (0% -> 18%): Slide to center of button & shrink slightly */
+  18% {
+    transform: translate3d(42px, 0, 0) scale(0.84) rotate(-4deg);
+    opacity: 1;
+  }
+  /* Step 3 (18% -> 38%): Pulled down into packing cannon tube */
+  38% {
+    transform: translate3d(42px, 13px, 0) scale(0.38) rotate(0deg);
+    opacity: 0.35;
+  }
+  /* Step 4 (38% -> 64%): Held inside packing cannon while loading bar & dots spin */
+  64% {
+    transform: translate3d(42px, 15px, 0) scale(0.32) rotate(0deg);
+    opacity: 0.2;
+  }
+  /* Step 5a (64% -> 79%): Launches upward out of tube & rotates gently */
+  79% {
+    transform: translate3d(42px, -36px, 0) scale(1.14) rotate(-14deg);
+    opacity: 1;
+  }
+  /* Step 5b (79% -> 89%): Lands back with a small playful bounce */
+  89% {
+    transform: translate3d(42px, 4px, 0) scale(0.93) rotate(6deg);
+    opacity: 1;
+  }
+  95% {
+    transform: translate3d(42px, -3px, 0) scale(1.02) rotate(-2deg);
+    opacity: 1;
+  }
+  /* Step 6 transition (95% -> 100%): Settles & yields to green checkmark */
+  100% {
+    transform: translate3d(42px, 0, 0) scale(0.5) rotate(0deg);
+    opacity: 0;
+  }
+}
+
+/* 3. Colorful Delivery Tube / Packing Cannon inside the button */
+.snack-cannon-tube {
+  position: absolute;
+  left: 50%;
+  bottom: 5px;
+  width: 48px;
+  height: 28px;
+  transform: translate3d(-50%, 18px, 0) scale(0.5);
+  opacity: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.snack-order-btn.is-animating .snack-cannon-tube {
+  animation: snackCannonLifecycle 2.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes snackCannonLifecycle {
+  0%,
+  12% {
+    transform: translate3d(-50%, 18px, 0) scale(0.5);
+    opacity: 0;
+  }
+  26% {
+    transform: translate3d(-50%, 0, 0) scale(1);
+    opacity: 1;
+  }
+  /* Squashes slightly as bag is pulled in & pressurized during loading */
+  42%,
+  62% {
+    transform: translate3d(-50%, 2px, 0) scaleX(1.12) scaleY(0.88);
+    opacity: 1;
+  }
+  /* Recoil when launching snack bag upward */
+  68% {
+    transform: translate3d(-50%, -4px, 0) scaleX(0.92) scaleY(1.14);
+    opacity: 1;
+  }
+  85%,
+  100% {
+    transform: translate3d(-50%, 16px, 0) scale(0.5);
+    opacity: 0;
+  }
+}
+
+/* 4. Brief Loading Effect: Progress Line + Rotating Dots */
+.snack-loading-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 26px 7px;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 7;
+}
+
+.snack-order-btn.is-animating .snack-loading-stage {
+  animation: snackLoadingVisibility 2.35s ease forwards;
+}
+
+@keyframes snackLoadingVisibility {
+  0%,
+  34% {
+    opacity: 0;
+  }
+  40%,
+  63% {
+    opacity: 1;
+  }
+  68%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.snack-rotating-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.snack-rotating-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: #fde047;
+  box-shadow: 0 0 8px rgba(250, 204, 21, 0.8);
+  animation: snackDotPulse 0.45s ease-in-out infinite alternate;
+}
+
+.snack-rotating-dots span:nth-child(2) {
+  background: #38bdf8;
+  animation-delay: 0.12s;
+}
+
+.snack-rotating-dots span:nth-child(3) {
+  background: #f43f5e;
+  animation-delay: 0.24s;
+}
+
+@keyframes snackDotPulse {
+  0% {
+    transform: translateY(0) scale(0.8);
+    opacity: 0.55;
+  }
+  100% {
+    transform: translateY(-4px) scale(1.25);
+    opacity: 1;
+  }
+}
+
+.snack-progress-track {
+  width: 100%;
+  max-width: 140px;
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.snack-progress-fill {
+  width: 0%;
+  height: 100%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #facc15 0%, #38bdf8 50%, #22c55e 100%);
+}
+
+.snack-order-btn.is-animating .snack-progress-fill {
+  animation: snackProgressFill 2.35s linear forwards;
+}
+
+@keyframes snackProgressFill {
+  0%,
+  36% {
+    width: 0%;
+  }
+  64%,
+  100% {
+    width: 100%;
+  }
+}
+
+/* 6. Green Checkmark & "Order placed!" Overlay (shown for 2 seconds) */
+.snack-success-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  direction: ltr;
+  opacity: 0;
+  transform: translateY(8px) scale(0.94);
+  pointer-events: none;
+  z-index: 8;
+  transition:
+    opacity 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.snack-order-btn.is-success .snack-success-overlay {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.snack-order-btn.is-success {
+  border-color: rgba(34, 197, 94, 0.65) !important;
+  box-shadow:
+    0 14px 32px rgba(11, 12, 16, 0.4),
+    0 0 24px rgba(34, 197, 94, 0.28);
+}
+
+.snack-check-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  background: #22c55e;
+  color: #052e16;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 14px rgba(34, 197, 94, 0.6);
+  flex-shrink: 0;
+}
+
+.snack-success-text {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #4ade80;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
 }

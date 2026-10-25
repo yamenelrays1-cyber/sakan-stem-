@@ -1,8 +1,9 @@
 import type { RoommateOrderItem } from '../types/orders';
+import { sanitizeTextInput } from '../utils/emailOtpService';
 
 export type MqttConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'offline';
 
-export const DEFAULT_ROOM_CODE = 'sakan-orders-2026-v3';
+export const DEFAULT_ROOM_CODE = 'sakan-orders-2026-v4';
 export const MQTT_BROKER_URL = 'wss://broker.emqx.io:8084/mqtt';
 
 interface MqttClientLike {
@@ -41,6 +42,11 @@ export function getLockStatusTopic(roomCode: string): string {
   return `sakan_app/${cleanRoom}/status/locked`;
 }
 
+export function getDeliveryStatusTopic(roomCode: string): string {
+  const cleanRoom = (roomCode || DEFAULT_ROOM_CODE).trim();
+  return `sakan_app/${cleanRoom}/status/delivery`;
+}
+
 export function getPushSubTopic(roomCode: string, deviceId: string): string {
   const cleanRoom = (roomCode || DEFAULT_ROOM_CODE).trim();
   return `sakan_app/${cleanRoom}/push_subs/${deviceId}`;
@@ -57,6 +63,7 @@ export class SakanMqttSync {
   private onOrderReceived: (orderId: string, order: RoommateOrderItem | null) => void;
   private onStatusChange: (status: MqttConnectionStatus) => void;
   private onLockStatusChange?: (locked: boolean) => void;
+  private onDeliveryStatusChange?: (enabled: boolean, fee: number) => void;
   private onPushSubscriptionReceived?: (deviceId: string, sub: PushSubscriptionJSON) => void;
 
   constructor(params: {
@@ -64,12 +71,14 @@ export class SakanMqttSync {
     onOrderReceived: (orderId: string, order: RoommateOrderItem | null) => void;
     onStatusChange: (status: MqttConnectionStatus) => void;
     onLockStatusChange?: (locked: boolean) => void;
+    onDeliveryStatusChange?: (enabled: boolean, fee: number) => void;
     onPushSubscriptionReceived?: (deviceId: string, sub: PushSubscriptionJSON) => void;
   }) {
     this.roomCode = params.roomCode || DEFAULT_ROOM_CODE;
     this.onOrderReceived = params.onOrderReceived;
     this.onStatusChange = params.onStatusChange;
     this.onLockStatusChange = params.onLockStatusChange;
+    this.onDeliveryStatusChange = params.onDeliveryStatusChange;
     this.onPushSubscriptionReceived = params.onPushSubscriptionReceived;
   }
 
@@ -98,6 +107,7 @@ export class SakanMqttSync {
           [
             getOrdersWildcardTopic(this.roomCode),
             getLockStatusTopic(this.roomCode),
+            getDeliveryStatusTopic(this.roomCode),
             getPushSubsWildcardTopic(this.roomCode),
           ],
           { qos: 1 }
@@ -138,6 +148,23 @@ export class SakanMqttSync {
           return;
         }
 
+        const deliveryTopic = getDeliveryStatusTopic(this.roomCode);
+        if (topic === deliveryTopic) {
+          if (!payloadStr) {
+            this.onDeliveryStatusChange?.(false, 0);
+            return;
+          }
+          try {
+            const parsed = JSON.parse(payloadStr) as { enabled?: boolean; fee?: number };
+            const enabled = Boolean(parsed?.enabled);
+            const fee = Math.max(0, Math.round((Number(parsed?.fee) || 0) * 100) / 100);
+            this.onDeliveryStatusChange?.(enabled, fee);
+          } catch {
+            // ignore
+          }
+          return;
+        }
+
         const pushPrefix = `sakan_app/${this.roomCode}/push_subs/`;
         if (topic.startsWith(pushPrefix)) {
           const subDeviceId = topic.slice(pushPrefix.length);
@@ -165,8 +192,23 @@ export class SakanMqttSync {
 
           try {
             const parsed = JSON.parse(payloadStr) as RoommateOrderItem;
-            if (parsed && parsed.id && parsed.itemName && parsed.roommateName) {
-              this.onOrderReceived(orderId, parsed);
+            const cleanItem = sanitizeTextInput(String(parsed?.itemName || ''), 100);
+            const cleanName = sanitizeTextInput(String(parsed?.roommateName || ''), 60);
+            const cleanRoom = sanitizeTextInput(String(parsed?.roomNumber || ''), 30);
+            const cleanNotes = sanitizeTextInput(String(parsed?.notes || ''), 160);
+            if (parsed && parsed.id && cleanItem && cleanName) {
+              this.onOrderReceived(orderId, {
+                ...parsed,
+                id: sanitizeTextInput(String(parsed.id), 128),
+                deviceId: parsed.deviceId ? sanitizeTextInput(String(parsed.deviceId), 128) : undefined,
+                itemName: cleanItem,
+                roommateName: cleanName,
+                roomNumber: cleanRoom,
+                notes: cleanNotes,
+                quantity: Math.max(1, Math.min(100, Number(parsed.quantity) || 1)),
+                unitPrice: Math.max(0.5, Math.min(10000, Number(parsed.unitPrice) || 15)),
+                cashPaidAmount: Math.max(0, Math.min(50000, Number(parsed.cashPaidAmount) || 0)),
+              });
             }
           } catch {
             // ignore malformed JSON
@@ -190,6 +232,20 @@ export class SakanMqttSync {
     this.client.publish(
       topic,
       JSON.stringify({ locked, updatedAt: new Date().toISOString() }),
+      { retain: true, qos: 1 }
+    );
+  }
+
+  public publishDeliveryStatus(enabled: boolean, fee: number): void {
+    if (!this.client) return;
+    const topic = getDeliveryStatusTopic(this.roomCode);
+    this.client.publish(
+      topic,
+      JSON.stringify({
+        enabled,
+        fee: Math.max(0, Math.round((Number(fee) || 0) * 100) / 100),
+        updatedAt: new Date().toISOString(),
+      }),
       { retain: true, qos: 1 }
     );
   }

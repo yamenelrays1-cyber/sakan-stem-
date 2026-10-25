@@ -11,22 +11,33 @@ import {
   aggregateOrdersForMaster,
   calculateRoommateSummaries,
   calculateSessionFinancials,
+  normalizeArabicItemName,
   verifyMasterPasscode,
+  canUserModifyOrder,
   MASTER_PASSCODE,
 } from './utils/orderAggregator';
-import { TopBar, type AppEdition } from './components/TopBar';
+import {
+  sanitizeTextInput,
+  normalizeDormRoomInput,
+  verifySessionPayload,
+  createVerifiedSessionPayload,
+  evaluateAttemptRateLimit,
+} from './utils/emailOtpService';
+import { TopBar, type AppEdition, type ThemeMode } from './components/TopBar';
 import { SessionToolbar } from './components/SessionToolbar';
 import {
   OrderFormCard,
   SAVED_STUDENT_NAME_KEY,
   SAVED_STUDENT_ROOM_KEY,
+  SAVED_STUDENT_EMAIL_KEY,
 } from './components/OrderFormCard';
 import { MasterAggregatedView } from './components/MasterAggregatedView';
 import { CashSettlementView } from './components/CashSettlementView';
 import { StudentDeliveryView } from './components/StudentDeliveryView';
 import { PWAInstallModal } from './components/PWAInstallModal';
-import { EntryScreen } from './components/EntryScreen';
+import { EntryScreen, VERIFIED_SESSION_STORAGE_KEY } from './components/EntryScreen';
 import { Footer } from './components/Footer';
+import { AnimeLoadingScreenDemo } from './components/InteractiveShowcase';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import { SakanMqttSync, DEFAULT_ROOM_CODE } from './lib/mqttSync';
 import {
@@ -54,20 +65,51 @@ import {
 } from './lib/firebase';
 
 const LOCAL_STORAGE_DEVICE_ID_KEY = 'sakan_phone_device_id_v1';
+const LOCAL_STORAGE_BASE_PHONE_ID_KEY = 'sakan_base_phone_id_v1';
 
-function getOrCreatePhoneDeviceId(): string {
+function getOrCreateBasePhoneId(): string {
   if (typeof window === 'undefined') return 'dev_server';
   const params = new URLSearchParams(window.location.search);
   const queryDevice = params.get('device');
   if (queryDevice && queryDevice.trim()) {
-    return queryDevice.trim();
+    return sanitizeTextInput(queryDevice, 64);
   }
   try {
-    const existing = localStorage.getItem(LOCAL_STORAGE_DEVICE_ID_KEY);
-    if (existing && existing.trim()) {
-      return existing;
+    const existingBase = localStorage.getItem(LOCAL_STORAGE_BASE_PHONE_ID_KEY);
+    if (existingBase && existingBase.trim()) {
+      return sanitizeTextInput(existingBase, 64);
     }
     const generated = `phone_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem(LOCAL_STORAGE_BASE_PHONE_ID_KEY, generated);
+    return generated;
+  } catch {
+    return `phone_${Date.now()}`;
+  }
+}
+
+function computeProfileDeviceId(name: string, room: string): string {
+  const baseId = getOrCreateBasePhoneId();
+  const cleanName = normalizeArabicItemName(name) || sanitizeTextInput(name, 60);
+  const cleanRoom = sanitizeTextInput(room, 10);
+  if (!cleanName || !cleanRoom) return baseId;
+  return `${baseId}__${cleanName}__${cleanRoom}`;
+}
+
+function getOrCreatePhoneDeviceId(): string {
+  if (typeof window === 'undefined') return 'dev_server';
+  try {
+    const savedName = sanitizeTextInput(localStorage.getItem(SAVED_STUDENT_NAME_KEY) || '', 60);
+    const savedRoom = sanitizeTextInput(localStorage.getItem(SAVED_STUDENT_ROOM_KEY) || '', 10);
+    if (savedName && savedRoom) {
+      const profileId = computeProfileDeviceId(savedName, savedRoom);
+      localStorage.setItem(LOCAL_STORAGE_DEVICE_ID_KEY, profileId);
+      return profileId;
+    }
+    const existing = localStorage.getItem(LOCAL_STORAGE_DEVICE_ID_KEY);
+    if (existing && existing.trim()) {
+      return sanitizeTextInput(existing, 128);
+    }
+    const generated = getOrCreateBasePhoneId();
     localStorage.setItem(LOCAL_STORAGE_DEVICE_ID_KEY, generated);
     return generated;
   } catch {
@@ -75,18 +117,25 @@ function getOrCreatePhoneDeviceId(): string {
   }
 }
 
-const STANDALONE_LOGIN_DONE_KEY = 'sakan_standalone_login_completed_v5';
-const BROWSER_LOGIN_DONE_KEY = 'sakan_browser_login_completed_v5';
+const STANDALONE_LOGIN_DONE_KEY = 'sakan_standalone_login_completed_v8';
+const BROWSER_LOGIN_DONE_KEY = 'sakan_browser_login_completed_v8';
 
-// One-time cleanup of legacy student profile keys so old test student data is wiped
+// One-time cleanup of legacy student profile keys and unverified login flags
 if (typeof window !== 'undefined') {
   try {
     localStorage.removeItem('sakan_saved_student_name_v1');
     localStorage.removeItem('sakan_saved_student_room_v1');
+    localStorage.removeItem('sakan_registered_student_accounts_v1');
     localStorage.removeItem('sakan_standalone_login_completed_v3');
     localStorage.removeItem('sakan_browser_login_completed_v3');
     localStorage.removeItem('sakan_standalone_login_completed_v4');
     localStorage.removeItem('sakan_browser_login_completed_v4');
+    localStorage.removeItem('sakan_standalone_login_completed_v5');
+    localStorage.removeItem('sakan_browser_login_completed_v5');
+    localStorage.removeItem('sakan_standalone_login_completed_v6');
+    localStorage.removeItem('sakan_browser_login_completed_v6');
+    localStorage.removeItem('sakan_standalone_login_completed_v7');
+    localStorage.removeItem('sakan_browser_login_completed_v7');
   } catch {
     // ignore
   }
@@ -102,13 +151,25 @@ function isStandaloneAppMode(): boolean {
   );
 }
 
+/**
+ * Authentication (1):
+ * Verifies that login was genuinely completed after OTP verification,
+ * with a valid signed session payload and non-empty student profile.
+ */
 function hasCompletedFirstLogin(): boolean {
   if (typeof window === 'undefined') return false;
   try {
     const key = isStandaloneAppMode()
       ? STANDALONE_LOGIN_DONE_KEY
       : BROWSER_LOGIN_DONE_KEY;
-    return localStorage.getItem(key) === 'true';
+    if (localStorage.getItem(key) !== 'true') {
+      return false;
+    }
+    const rawSession = localStorage.getItem(VERIFIED_SESSION_STORAGE_KEY);
+    if (!rawSession) return false;
+    const parsed = JSON.parse(rawSession);
+    const verified = verifySessionPayload(parsed);
+    return verified.valid;
   } catch {
     return false;
   }
@@ -124,7 +185,7 @@ function getInitialEditionFromUrl(): AppEdition {
 
 function getSavedStudentName(): string {
   try {
-    return (localStorage.getItem(SAVED_STUDENT_NAME_KEY) || '').trim();
+    return sanitizeTextInput(localStorage.getItem(SAVED_STUDENT_NAME_KEY) || '', 60);
   } catch {
     return '';
   }
@@ -132,21 +193,30 @@ function getSavedStudentName(): string {
 
 function getSavedStudentRoom(): DormRoom | '' {
   try {
-    const val = (localStorage.getItem(SAVED_STUDENT_ROOM_KEY) || '').trim();
-    return DORM_ROOMS.includes(val as DormRoom) ? (val as DormRoom) : '';
+    const val = sanitizeTextInput(localStorage.getItem(SAVED_STUDENT_ROOM_KEY) || '', 20);
+    return (normalizeDormRoomInput(val) as DormRoom) || '';
+  } catch {
+    return '';
+  }
+}
+
+function getSavedStudentEmail(): string {
+  try {
+    return sanitizeTextInput(localStorage.getItem(SAVED_STUDENT_EMAIL_KEY) || '', 120).toLowerCase();
   } catch {
     return '';
   }
 }
 
 export default function App() {
-  const [deviceId] = useState<string>(getOrCreatePhoneDeviceId);
+  const [deviceId, setDeviceId] = useState<string>(getOrCreatePhoneDeviceId);
   const [myStudentOrders, setMyStudentOrders] = useState<RoommateOrderItem[]>([]);
   const [masterAllOrders, setMasterAllOrders] = useState<RoommateOrderItem[]>([]);
   const [mqttOrdersMap, setMqttOrdersMap] = useState<Record<string, RoommateOrderItem>>({});
 
   const [savedStudentName, setSavedStudentName] = useState<string>(getSavedStudentName);
   const [savedStudentRoom, setSavedStudentRoom] = useState<DormRoom | ''>(getSavedStudentRoom);
+  const [savedStudentEmail, setSavedStudentEmail] = useState<string>(getSavedStudentEmail);
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [edition, setEdition] = useState<AppEdition>(getInitialEditionFromUrl);
@@ -154,13 +224,18 @@ export default function App() {
     if (getInitialEditionFromUrl() === 'master') return false;
     const existingName = getSavedStudentName();
     const existingRoom = getSavedStudentRoom();
-    if (!hasCompletedFirstLogin() || !existingName || !existingRoom) {
+    const existingEmail = getSavedStudentEmail();
+    if (!hasCompletedFirstLogin() || !existingName || !existingRoom || !existingEmail) {
       return true;
     }
     return false;
   });
   const [isMasterUnlocked, setIsMasterUnlocked] = useState(false);
+  const [masterFailedAttempts, setMasterFailedAttempts] = useState<number>(0);
+  const [masterLockedUntilMs, setMasterLockedUntilMs] = useState<number>(0);
   const [isOrdersLocked, setIsOrdersLocked] = useState(false);
+  const [isDeliveryEnabled, setIsDeliveryEnabled] = useState<boolean>(false);
+  const [deliveryFee, setDeliveryFee] = useState<number>(5);
   const [passcodeInput, setPasscodeInput] = useState('');
   const [passcodeError, setPasscodeError] = useState<string | null>(null);
   const [copiedSummaryRecently, setCopiedSummaryRecently] = useState(false);
@@ -181,6 +256,49 @@ export default function App() {
   });
   const [backgroundTestPending, setBackgroundTestPending] = useState(false);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [theme, setTheme] = useState<ThemeMode>(() => {
+    try {
+      const saved = localStorage.getItem('sakan_theme_mode_v1');
+      if (saved === 'light' || saved === 'dark') return saved;
+    } catch {
+      // ignore
+    }
+    return 'dark';
+  });
+
+  const handleToggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const next: ThemeMode = prev === 'dark' ? 'light' : 'dark';
+      try {
+        localStorage.setItem('sakan_theme_mode_v1', next);
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.style.colorScheme = theme;
+      document.body.style.backgroundColor = theme === 'dark' ? '#090b10' : '#f8fafc';
+      document.body.style.color = theme === 'dark' ? '#f8fafc' : '#0f172a';
+    }
+  }, [theme]);
+
+  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(() => {
+    if (getInitialEditionFromUrl() === 'master') return false;
+    if (hasCompletedFirstLogin()) return false;
+    return true;
+  });
+
+  useEffect(() => {
+    if (!isInitialLoading) return;
+    const t = window.setTimeout(() => {
+      setIsInitialLoading(false);
+    }, 3200);
+    return () => window.clearTimeout(t);
+  }, [isInitialLoading]);
 
   const { isInstallable, isInstalled, install } = usePWAInstall();
   const nameInputRef = useRef<HTMLInputElement | null>(null);
@@ -313,16 +431,25 @@ export default function App() {
     );
   }, [myStudentOrders, masterAllOrders, mqttOrdersMap]);
 
-  // Student's OWN orders on this phone only (strictly isolated by deviceId)
+  // Student's OWN orders on this phone only (strictly isolated by deviceId + current student name & room)
   const combinedMyStudentOrders = useMemo(() => {
     const merged = new Map<string, RoommateOrderItem>();
+    const activeName = savedStudentName.trim();
+    const activeRoom = savedStudentRoom.trim();
+    const matchesActiveStudent = (ord: RoommateOrderItem) => {
+      if (ord.deviceId && ord.deviceId !== deviceId) return false;
+      if (activeName && ord.roommateName.trim() !== activeName) return false;
+      if (activeRoom && ord.roomNumber.trim() !== activeRoom) return false;
+      return true;
+    };
+
     for (const ord of myStudentOrders) {
-      if (!ord.deviceId || ord.deviceId === deviceId) {
+      if (matchesActiveStudent(ord)) {
         merged.set(ord.id, ord);
       }
     }
     for (const [id, ord] of Object.entries(mqttOrdersMap)) {
-      if (ord.deviceId === deviceId) {
+      if (ord.deviceId === deviceId && matchesActiveStudent(ord)) {
         const existing = merged.get(id);
         if (!existing || ord.updatedAt >= existing.updatedAt) {
           merged.set(id, ord);
@@ -332,7 +459,7 @@ export default function App() {
     return Array.from(merged.values()).sort((a, b) =>
       b.createdAt.localeCompare(a.createdAt)
     );
-  }, [myStudentOrders, mqttOrdersMap, deviceId]);
+  }, [myStudentOrders, mqttOrdersMap, deviceId, savedStudentName, savedStudentRoom]);
 
   // Connect to MQTT.js broker (wss://broker.emqx.io:8084/mqtt) for real-time cross-phone sync
   useEffect(() => {
@@ -345,6 +472,10 @@ export default function App() {
       },
       onLockStatusChange: (locked) => {
         applyIncomingLockState(locked);
+      },
+      onDeliveryStatusChange: (enabled, fee) => {
+        setIsDeliveryEnabled(enabled);
+        setDeliveryFee(fee);
       },
       onPushSubscriptionReceived: (subDeviceId, sub) => {
         mqttPushSubsRef.current[subDeviceId] = sub;
@@ -392,6 +523,12 @@ export default function App() {
         if (typeof data.isOrdersLocked === 'boolean') {
           applyIncomingLockState(data.isOrdersLocked);
         }
+        if (typeof data.isDeliveryEnabled === 'boolean') {
+          setIsDeliveryEnabled(data.isDeliveryEnabled);
+        }
+        if (typeof data.deliveryFee === 'number') {
+          setDeliveryFee(data.deliveryFee);
+        }
       }
     } catch {
       // ignore offline fetch errors
@@ -410,6 +547,12 @@ export default function App() {
         }
         if (typeof data.isOrdersLocked === 'boolean') {
           applyIncomingLockState(data.isOrdersLocked);
+        }
+        if (typeof data.isDeliveryEnabled === 'boolean') {
+          setIsDeliveryEnabled(data.isDeliveryEnabled);
+        }
+        if (typeof data.deliveryFee === 'number') {
+          setDeliveryFee(data.deliveryFee);
         }
       }
     } catch {
@@ -435,12 +578,20 @@ export default function App() {
         const parsed = JSON.parse(event.data) as {
           type?: string;
           isOrdersLocked?: boolean;
+          isDeliveryEnabled?: boolean;
+          deliveryFee?: number;
         };
         if (typeof parsed.isOrdersLocked === 'boolean') {
           applyIncomingLockState(
             parsed.isOrdersLocked,
             parsed.type === 'lock:changed'
           );
+        }
+        if (typeof parsed.isDeliveryEnabled === 'boolean') {
+          setIsDeliveryEnabled(parsed.isDeliveryEnabled);
+        }
+        if (typeof parsed.deliveryFee === 'number') {
+          setDeliveryFee(parsed.deliveryFee);
         }
       } catch {
         // ignore parse errors
@@ -465,12 +616,19 @@ export default function App() {
 
   const handleSelectEdition = (nextEdition: AppEdition) => {
     setEdition(nextEdition);
-    setShowEntryScreen(false);
     if (nextEdition === 'student') {
+      const hasLogin =
+        hasCompletedFirstLogin() &&
+        Boolean(savedStudentName) &&
+        Boolean(savedStudentRoom) &&
+        Boolean(savedStudentEmail);
+      setShowEntryScreen(!hasLogin);
       setIsMasterUnlocked(false);
       setPasscodeInput('');
       setPasscodeError(null);
       setStatusBanner(null);
+    } else {
+      setShowEntryScreen(false);
     }
     try {
       const url = new URL(window.location.href);
@@ -486,10 +644,23 @@ export default function App() {
     }
   };
 
-  const handleSaveStudentProfileAndEnter = (name: string, room: DormRoom) => {
+  const handleSaveStudentProfileAndEnter = (name: string, room: DormRoom, email: string) => {
+    const trimmedName = sanitizeTextInput(name, 60);
+    const trimmedEmail = sanitizeTextInput(email, 120).toLowerCase();
+    const isProfileChanged =
+      (normalizeArabicItemName(trimmedName) || trimmedName) !==
+        (normalizeArabicItemName(savedStudentName) || savedStudentName.trim()) ||
+      room !== savedStudentRoom ||
+      trimmedEmail !== savedStudentEmail.trim().toLowerCase();
+    const nextDeviceId = computeProfileDeviceId(trimmedName, room);
+
     try {
-      localStorage.setItem(SAVED_STUDENT_NAME_KEY, name);
+      localStorage.setItem(SAVED_STUDENT_NAME_KEY, trimmedName);
       localStorage.setItem(SAVED_STUDENT_ROOM_KEY, room);
+      localStorage.setItem(SAVED_STUDENT_EMAIL_KEY, trimmedEmail);
+      localStorage.setItem(LOCAL_STORAGE_DEVICE_ID_KEY, nextDeviceId);
+      const signedSession = createVerifiedSessionPayload(trimmedEmail, trimmedName, room);
+      localStorage.setItem(VERIFIED_SESSION_STORAGE_KEY, JSON.stringify(signedSession));
       if (isStandaloneAppMode()) {
         localStorage.setItem(STANDALONE_LOGIN_DONE_KEY, 'true');
       }
@@ -497,24 +668,71 @@ export default function App() {
     } catch {
       // ignore
     }
-    setSavedStudentName(name);
+
+    if (isProfileChanged) {
+      setDeviceId(nextDeviceId);
+      setMyStudentOrders([]);
+      setStudentPreparedInput('');
+      setStudentOrderSubmittedMsg(null);
+      setDeleteOrderSignal((prev) => prev + 1);
+    }
+
+    setSavedStudentName(trimmedName);
     setSavedStudentRoom(room);
+    setSavedStudentEmail(trimmedEmail);
     setEdition('student');
     setShowEntryScreen(false);
     ensureNotificationPermission(handleSubscribedPush).then((perm) => setNotificationPermission(perm));
   };
 
+  const handleStudentLogout = () => {
+    try {
+      localStorage.removeItem(STANDALONE_LOGIN_DONE_KEY);
+      localStorage.removeItem(BROWSER_LOGIN_DONE_KEY);
+      localStorage.removeItem(VERIFIED_SESSION_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    setIsMasterUnlocked(false);
+    setPasscodeInput('');
+    setPasscodeError(null);
+    setEdition('student');
+    setShowEntryScreen(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleUnlockMaster = (e: React.FormEvent) => {
     e.preventDefault();
+    const now = Date.now();
+    if (masterLockedUntilMs > now) {
+      const rem = Math.max(1, Math.ceil((masterLockedUntilMs - now) / 1000));
+      setPasscodeError(`تم إيقاف المحاولة مؤقتاً لمدة ${rem} ثانية لتجاوز عدد المحاولات المسموح.`);
+      return;
+    }
+
     if (verifyMasterPasscode(passcodeInput)) {
       setIsMasterUnlocked(true);
+      setMasterFailedAttempts(0);
+      setMasterLockedUntilMs(0);
       setPasscodeError(null);
       setPasscodeInput('');
       ensureNotificationPermission(handleSubscribedPush).then((perm) => setNotificationPermission(perm));
     } else {
-      setPasscodeError('الباسورد غير صحيح — نسخة المشرف محمية بباسورد.');
+      const rate = evaluateAttemptRateLimit(masterFailedAttempts, masterLockedUntilMs, now);
+      setMasterFailedAttempts(rate.nextFailedAttempts);
+      setMasterLockedUntilMs(rate.nextLockedUntilMs);
+      setPasscodeError(
+        rate.isLocked
+          ? rate.errorAr || 'تم إيقاف المحاولة مؤقتاً لمدة 60 ثانية.'
+          : `الباسورد غير صحيح — ${rate.errorAr || 'نسخة المشرف محمية بباسورد.'}`
+      );
     }
   };
+
+  const activeDeliveryFee = useMemo(
+    () => (isDeliveryEnabled && deliveryFee > 0 ? Math.round(deliveryFee * 100) / 100 : 0),
+    [isDeliveryEnabled, deliveryFee]
+  );
 
   // Derived Master Aggregation, Roommate Summaries, and Session Totals
   const aggregatedItems = useMemo(
@@ -522,21 +740,29 @@ export default function App() {
     [combinedAllOrders]
   );
   const roommateSummaries = useMemo(
-    () => calculateRoommateSummaries(combinedAllOrders, 0),
-    [combinedAllOrders]
+    () => calculateRoommateSummaries(combinedAllOrders, activeDeliveryFee),
+    [combinedAllOrders, activeDeliveryFee]
   );
   const financials = useMemo(
-    () => calculateSessionFinancials(combinedAllOrders, 0),
-    [combinedAllOrders]
+    () => calculateSessionFinancials(combinedAllOrders, activeDeliveryFee),
+    [combinedAllOrders, activeDeliveryFee]
   );
 
   // Student's own combined financial summary across all items they ordered
-  const myTotalRequired = useMemo(
+  const myItemsSubtotal = useMemo(
     () =>
       Math.round(
         combinedMyStudentOrders.reduce((acc, o) => acc + o.quantity * o.unitPrice, 0) * 100
       ) / 100,
     [combinedMyStudentOrders]
+  );
+
+  const myTotalRequired = useMemo(
+    () =>
+      combinedMyStudentOrders.length > 0
+        ? Math.round((myItemsSubtotal + activeDeliveryFee) * 100) / 100
+        : 0,
+    [combinedMyStudentOrders.length, myItemsSubtotal, activeDeliveryFee]
   );
 
   const myCurrentPreparedCash = useMemo(
@@ -579,8 +805,12 @@ export default function App() {
       setStudentOrderSubmittedMsg(null);
       return;
     }
-    setStudentPreparedInput(String(myCurrentPreparedCash || myTotalRequired));
-  }, [myCurrentPreparedCash, myTotalRequired, combinedMyStudentOrders.length]);
+    const effective =
+      myCurrentPaymentMethod === 'cash'
+        ? Math.max(myTotalRequired, myCurrentPreparedCash || myTotalRequired)
+        : 0;
+    setStudentPreparedInput(String(effective));
+  }, [myCurrentPreparedCash, myTotalRequired, myCurrentPaymentMethod, combinedMyStudentOrders.length]);
 
   const applyPaymentAcrossMyOrders = useCallback(
     async (
@@ -589,10 +819,11 @@ export default function App() {
       desiredTotalCash: number
     ) => {
       if (ordersList.length === 0) return;
-      const totalReq =
+      const itemsSub =
         Math.round(
           ordersList.reduce((acc, o) => acc + o.quantity * o.unitPrice, 0) * 100
         ) / 100;
+      const totalReq = Math.round((itemsSub + activeDeliveryFee) * 100) / 100;
       const effectiveTotalCash =
         nextMethod === 'cash'
           ? Math.max(totalReq, Math.round((Number(desiredTotalCash) || totalReq) * 100) / 100)
@@ -633,7 +864,7 @@ export default function App() {
         // ignore network error
       }
     },
-    [deviceId]
+    [deviceId, activeDeliveryFee]
   );
 
   const handleAddOrder = async (sanitized: {
@@ -648,12 +879,30 @@ export default function App() {
     cashPaidAmount: number;
     notes: string;
   }) => {
+    const cleanNewPrice = Math.round(sanitized.unitPrice * 100) / 100;
+    const existingSamePriceOrder = combinedMyStudentOrders.find(
+      (o) =>
+        !o.isPaid &&
+        !o.isPurchased &&
+        (o.normalizedItemKey || normalizeArabicItemName(o.itemName)) ===
+          sanitized.normalizedItemKey &&
+        Math.round(o.unitPrice * 100) / 100 === cleanNewPrice
+    );
+    if (existingSamePriceOrder) {
+      await handleUpdateOrderQuantity(
+        existingSamePriceOrder.id,
+        existingSamePriceOrder.quantity + sanitized.quantity
+      );
+      return;
+    }
+
     const newId = `ord_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const isPaid = false;
     const activeMethod: PaymentMethod =
       combinedMyStudentOrders.length > 0 ? myCurrentPaymentMethod : 'cash';
     const itemSubtotal = Math.round(sanitized.quantity * sanitized.unitPrice * 100) / 100;
-    const newTotalReq = Math.round((myTotalRequired + itemSubtotal) * 100) / 100;
+    const newItemsSubtotal = Math.round((myItemsSubtotal + itemSubtotal) * 100) / 100;
+    const newTotalReq = Math.round((newItemsSubtotal + activeDeliveryFee) * 100) / 100;
     const hadCustomHigherBill =
       combinedMyStudentOrders.length > 0 && myCurrentPreparedCash > myTotalRequired;
     const targetTotalPrepared =
@@ -772,15 +1021,27 @@ export default function App() {
   const handleUpdateOrderQuantity = async (orderId: string, newQuantity: number) => {
     const clamped = Math.max(1, Math.min(100, newQuantity));
     const target = combinedMyStudentOrders.find((o) => o.id === orderId);
-    if (!target) return;
+    if (
+      !target ||
+      !canUserModifyOrder(target, {
+        deviceId,
+        name: savedStudentName,
+        room: savedStudentRoom,
+        isSupervisorUnlocked: edition === 'master' && isMasterUnlocked,
+      })
+    ) {
+      setStatusBanner('غير مسموح بتعديل طلب مستخدم آخر.');
+      return;
+    }
 
     const updatedList = combinedMyStudentOrders.map((o) =>
       o.id === orderId ? { ...o, quantity: clamped, updatedAt: new Date().toISOString() } : o
     );
-    const newTotalReq =
+    const newItemsSub =
       Math.round(
         updatedList.reduce((acc, o) => acc + o.quantity * o.unitPrice, 0) * 100
       ) / 100;
+    const newTotalReq = Math.round((newItemsSub + activeDeliveryFee) * 100) / 100;
     const hadCustomHigherBill = myCurrentPreparedCash > myTotalRequired;
     const desiredCash =
       myCurrentPaymentMethod === 'cash'
@@ -947,6 +1208,22 @@ export default function App() {
   };
 
   const handleDeleteOrder = async (orderId: string) => {
+    const targetOrder =
+      combinedMyStudentOrders.find((o) => o.id === orderId) ||
+      combinedAllOrders.find((o) => o.id === orderId);
+    if (
+      targetOrder &&
+      !canUserModifyOrder(targetOrder, {
+        deviceId,
+        name: savedStudentName,
+        room: savedStudentRoom,
+        isSupervisorUnlocked: edition === 'master' && isMasterUnlocked,
+      })
+    ) {
+      setStatusBanner('غير مسموح بحذف طلب مستخدم آخر.');
+      return;
+    }
+
     setDeleteOrderSignal((prev) => prev + 1);
     const remainingMyOrders = combinedMyStudentOrders.filter((o) => o.id !== orderId);
     setMyStudentOrders((prev) => prev.filter((o) => o.id !== orderId));
@@ -971,10 +1248,11 @@ export default function App() {
     }
 
     if (edition === 'student' && remainingMyOrders.length > 0) {
-      const newTotalReq =
+      const newItemsSub =
         Math.round(
           remainingMyOrders.reduce((acc, o) => acc + o.quantity * o.unitPrice, 0) * 100
         ) / 100;
+      const newTotalReq = Math.round((newItemsSub + activeDeliveryFee) * 100) / 100;
       const hadCustomHigherBill = myCurrentPreparedCash > myTotalRequired;
       const desiredCash =
         myCurrentPaymentMethod === 'cash'
@@ -1035,6 +1313,27 @@ export default function App() {
         ? 'تم قفل الطلبات.'
         : 'تم فتح الطلبات.'
     );
+  };
+
+  const handleUpdateDeliverySettings = async (nextEnabled: boolean, nextFee: number) => {
+    const cleanFee = Math.max(0, Math.round((Number(nextFee) || 0) * 100) / 100);
+    setIsDeliveryEnabled(nextEnabled);
+    setDeliveryFee(cleanFee);
+    mqttRef.current?.publishDeliveryStatus(nextEnabled, cleanFee);
+
+    try {
+      await fetch('/api/orders/delivery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          passcode: MASTER_PASSCODE,
+          enabled: nextEnabled,
+          fee: cleanFee,
+        }),
+      });
+    } catch {
+      // ignore
+    }
   };
 
   const handleClearAllOrders = async () => {
@@ -1105,15 +1404,35 @@ export default function App() {
     setStatusBanner('تم تسجيل الخروج.');
   };
 
+  if (isInitialLoading) {
+    return (
+      <div className="relative min-h-screen bg-black">
+        <AnimeLoadingScreenDemo />
+      </div>
+    );
+  }
+
   return (
-    <div id="top" className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
-      {/* Top Bar with Student Edition vs Master Edition Switcher + Direct APK Download */}
+    <div
+      id="top"
+      data-theme={theme}
+      className="min-h-screen flex flex-col bg-slate-50 text-slate-900 transition-colors duration-300"
+    >
+      {/* Top Bar with Theme Toggle (Crescent Moon / Sun) + Top Log Out Button */}
       <TopBar
         edition={edition}
-        onSelectEdition={handleSelectEdition}
+        onSelectEdition={(nextEd) => {
+          handleSelectEdition(nextEd);
+        }}
         onOpenInstallModal={() => setIsInstallModalOpen(true)}
         isInstalled={isInstalled}
-        onOpenEntryScreen={() => setShowEntryScreen(true)}
+        onOpenEntryScreen={() => {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        showLogoutButton={!showEntryScreen}
+        onLogout={handleStudentLogout}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
       />
 
       {/* PWA / APK Installation Modal */}
@@ -1136,6 +1455,9 @@ export default function App() {
           copiedSummaryRecently={copiedSummaryRecently}
           isOrdersLocked={isOrdersLocked}
           onToggleOrdersLock={handleToggleOrdersLock}
+          isDeliveryEnabled={isDeliveryEnabled}
+          deliveryFee={deliveryFee}
+          onUpdateDeliverySettings={handleUpdateDeliverySettings}
         />
       )}
 
@@ -1157,11 +1479,12 @@ export default function App() {
           </div>
         )}
 
-        {/* START / ENTRY SCREEN (صفحة البداية أو تسجيل الدخول بالاسم والأوضة) */}
+        {/* START / ENTRY SCREEN (صفحة تسجيل الدخول بـ Gmail والباسورد والـ OTP والاسم والغرفة) */}
         {showEntryScreen && (
           <EntryScreen
             initialName={savedStudentName}
             initialRoom={savedStudentRoom}
+            initialEmail={savedStudentEmail}
             onSaveStudentProfileAndEnter={handleSaveStudentProfileAndEnter}
             onEnterEdition={handleSelectEdition}
           />
@@ -1252,11 +1575,13 @@ export default function App() {
             <OrderFormCard
               nameInputRef={nameInputRef}
               isOrdersLocked={isOrdersLocked}
+              isDeliveryEnabled={isDeliveryEnabled}
+              deliveryFee={deliveryFee}
               savedStudentName={savedStudentName}
               savedStudentRoom={savedStudentRoom}
+              savedStudentEmail={savedStudentEmail}
               ordersCount={combinedMyStudentOrders.length}
               deleteSignal={deleteOrderSignal}
-              onEditStudentProfile={() => setShowEntryScreen(true)}
               onAddOrder={handleAddOrder}
             />
 
@@ -1270,16 +1595,36 @@ export default function App() {
                 <h2 className="text-base font-bold text-slate-900">
                   طلباتك والحساب المطلوب منك ({combinedMyStudentOrders.length})
                 </h2>
-                {combinedMyStudentOrders.length > 0 && (
-                  <span className="px-3 py-1 rounded-xl bg-slate-900 text-white text-xs font-bold font-mono tabular-nums">
-                    إجمالي المطلوب منك: {myTotalRequired} ج.م
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span
+                    className={`px-2.5 py-1 rounded-xl text-xs font-bold font-mono tabular-nums ${
+                      activeDeliveryFee > 0
+                        ? 'bg-amber-100 text-amber-900 border border-amber-200'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    {activeDeliveryFee > 0
+                      ? `🛵 فلوس الدليفري: ${activeDeliveryFee} ج.م`
+                      : 'الدليفري: 0 ج.م (مطفي)'}
                   </span>
-                )}
+                  {combinedMyStudentOrders.length > 0 && (
+                    <span className="px-3 py-1 rounded-xl bg-slate-900 text-white text-xs font-bold font-mono tabular-nums">
+                      إجمالي المطلوب منك: {myTotalRequired} ج.م
+                    </span>
+                  )}
+                </div>
               </div>
 
               {combinedMyStudentOrders.length === 0 ? (
-                <div className="py-6 text-center text-xs text-slate-500">
-                  لسه مضفتش طلبات — ضيف كل الطلبات اللي عايزها فوق، وبعدها هيظهرلك هنا إجمالي الفلوس المطلوبة منك وتحدد هتجهز كام للمشرف مرة واحدة.
+                <div className="py-6 text-center space-y-2">
+                  <p className="text-xs text-slate-500">
+                    لسه مضفتش طلبات — ضيف كل الطلبات اللي عايزها فوق، وبعدها هيظهرلك هنا إجمالي الفلوس المطلوبة منك وتحدد هتجهز كام للمشرف مرة واحدة.
+                  </p>
+                  {activeDeliveryFee > 0 && (
+                    <p className="text-xs font-bold text-amber-800">
+                      🛵 فلوس الدليفري المحددة من المشرف قبل إرسال الطلب: {activeDeliveryFee} ج.م
+                    </p>
+                  )}
                 </div>
               ) : (
                 <>
@@ -1298,11 +1643,14 @@ export default function App() {
                             <span className="text-xs text-slate-400" aria-hidden="true">
                               ·
                             </span>
-                            <span className="font-mono tabular-nums font-bold text-slate-900">
-                              {lineTotal} ج.م
+                            <span className="text-xs font-bold text-slate-700 font-mono tabular-nums">
+                              سعر {order.unitPrice} ج.م
                             </span>
                             <span className="text-xs text-slate-400" aria-hidden="true">
-                              ({order.unitPrice} ج.م للواحدة)
+                              ·
+                            </span>
+                            <span className="font-mono tabular-nums font-bold text-slate-900">
+                              العدد: {order.quantity} ({lineTotal} ج.م)
                             </span>
                           </div>
 
@@ -1342,43 +1690,76 @@ export default function App() {
                     })}
                   </div>
 
-                  {/* Unified Payment & Prepared Money Section Once After Ordering Everything */}
+                  {/* Unified Payment & Prepared Money Section Once After Ordering Everything (Showing Delivery Fee Clearly Before Sending) */}
                   <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      <div className="p-3 rounded-xl bg-white border border-slate-200">
+                        <div className="text-[11px] text-slate-500">حساب الطلبات</div>
+                        <div className="text-base sm:text-lg font-extrabold font-mono tabular-nums text-slate-900 mt-0.5">
+                          {myItemsSubtotal}{' '}
+                          <span className="text-xs font-normal text-slate-500">ج.م</span>
+                        </div>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-white border border-slate-200">
+                        <div className="text-[11px] text-slate-500">فلوس الدليفري</div>
+                        <div className="text-base sm:text-lg font-extrabold font-mono tabular-nums text-amber-800 mt-0.5">
+                          {activeDeliveryFee}{' '}
+                          <span className="text-xs font-normal text-slate-500">ج.م</span>
+                        </div>
+                      </div>
+
                       <div className="p-3 rounded-xl bg-white border border-slate-200">
                         <div className="text-[11px] text-slate-500">الفلوس المطلوبة منك</div>
-                        <div className="text-lg font-extrabold font-mono tabular-nums text-slate-900 mt-0.5">
-                          {myTotalRequired} <span className="text-xs font-normal text-slate-500">ج.م</span>
+                        <div className="text-base sm:text-lg font-extrabold font-mono tabular-nums text-slate-900 mt-0.5">
+                          {myTotalRequired}{' '}
+                          <span className="text-xs font-normal text-slate-500">ج.م</span>
                         </div>
                       </div>
 
-                      <div className="p-3 rounded-xl bg-white border border-slate-200">
-                        <div className="text-[11px] text-slate-500">
-                          {myCurrentPaymentMethod === 'cash' ? 'المبلغ اللي هتجهزه' : 'طريقة الدفع'}
+                      <div
+                        className={`p-3 rounded-xl border ${
+                          isMyOrdersFullyPaid
+                            ? 'bg-emerald-50/80 border-emerald-200'
+                            : myCurrentPaymentMethod === 'wallet'
+                              ? 'bg-rose-50/80 border-rose-200'
+                              : myChangeDue > 0
+                                ? 'bg-amber-50/80 border-amber-200'
+                                : 'bg-white border-slate-200'
+                        }`}
+                      >
+                        <div
+                          className={`text-[11px] font-medium ${
+                            isMyOrdersFullyPaid
+                              ? 'text-emerald-900'
+                              : myCurrentPaymentMethod === 'wallet'
+                                ? 'text-rose-900'
+                                : myChangeDue > 0
+                                  ? 'text-amber-900'
+                                  : 'text-slate-500'
+                          }`}
+                        >
+                          {isMyOrdersFullyPaid
+                            ? 'حالة الدفع'
+                            : myCurrentPaymentMethod === 'cash' && myChangeDue > 0
+                              ? 'الباقي ليك عند المشرف'
+                              : 'المطلوب دفعه للمشرف'}
                         </div>
-                        <div className="text-lg font-extrabold font-mono tabular-nums text-slate-900 mt-0.5">
-                          {myCurrentPaymentMethod === 'cash' ? (
-                            <>
-                              {myCurrentPreparedCash || myTotalRequired}{' '}
-                              <span className="text-xs font-normal text-slate-500">ج.م</span>
-                            </>
-                          ) : (
-                            <span className="text-sm font-bold text-rose-700">فودافون كاش</span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="col-span-2 sm:col-span-1 p-3 rounded-xl bg-amber-50/80 border border-amber-200">
-                        <div className="text-[11px] text-amber-900 font-medium">الباقي ليك عند المشرف</div>
-                        <div className="text-lg font-extrabold font-mono tabular-nums text-amber-900 mt-0.5">
+                        <div className="text-base sm:text-lg font-extrabold font-mono tabular-nums text-slate-900 mt-0.5">
                           {isMyOrdersFullyPaid ? (
                             <span className="text-sm font-bold text-emerald-700">تم الدفع (خالص)</span>
                           ) : myCurrentPaymentMethod === 'wallet' ? (
-                            <span className="text-xs font-bold text-rose-700">تحويل {myTotalRequired} ج.م</span>
-                          ) : (
-                            <>
+                            <span className="text-sm font-bold text-rose-700">
+                              يدفع {myTotalRequired} ج.م
+                            </span>
+                          ) : myChangeDue > 0 ? (
+                            <span className="text-amber-900">
                               {myChangeDue} <span className="text-xs font-normal text-amber-700">ج.م</span>
-                            </>
+                            </span>
+                          ) : (
+                            <span className="text-sm font-bold text-slate-900">
+                              يدفع {myTotalRequired} ج.م
+                            </span>
                           )}
                         </div>
                       </div>
@@ -1394,6 +1775,7 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => {
+                                setStudentOrderSubmittedMsg(null);
                                 setStudentPreparedInput(String(myTotalRequired));
                                 applyPaymentAcrossMyOrders(
                                   combinedMyStudentOrders,
@@ -1412,6 +1794,7 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => {
+                                setStudentOrderSubmittedMsg(null);
                                 setStudentPreparedInput('0');
                                 applyPaymentAcrossMyOrders(combinedMyStudentOrders, 'wallet', 0);
                               }}
@@ -1495,40 +1878,50 @@ export default function App() {
                           </div>
                         )}
 
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const num = Number(studentPreparedInput);
-                            const validCash =
-                              myCurrentPaymentMethod === 'cash'
-                                ? Number.isFinite(num) && num >= myTotalRequired
-                                  ? num
-                                  : myTotalRequired
-                                : 0;
-                            if (myCurrentPaymentMethod === 'cash') {
-                              setStudentPreparedInput(String(validCash));
-                            }
-                            await applyPaymentAcrossMyOrders(
-                              combinedMyStudentOrders,
-                              myCurrentPaymentMethod,
-                              validCash
-                            );
-                            const changeVal =
-                              myCurrentPaymentMethod === 'cash'
-                                ? Math.max(0, Math.round((validCash - myTotalRequired) * 100) / 100)
-                                : 0;
-                            setStudentOrderSubmittedMsg(
-                              myCurrentPaymentMethod === 'cash'
-                                ? `تم إرسال طلبك للمشرف بنجاح ✅ (المطلوب: ${myTotalRequired} ج.م · هتجهز: ${validCash} ج.م${
-                                    changeVal > 0 ? ` · الباقي ليك: ${changeVal} ج.م` : ''
-                                  })`
-                                : `تم إرسال طلبك للمشرف بنجاح ✅ (المطلوب فودافون كاش: ${myTotalRequired} ج.م)`
-                            );
-                          }}
-                          className="w-full min-h-[48px] px-5 py-3 text-sm font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl transition-colors whitespace-nowrap cursor-pointer"
-                        >
-                          إرسال الطلب للمشرف ({myTotalRequired} ج.م)
-                        </button>
+                        <div className="pt-1 flex justify-center">
+                          <button
+                            id="submit-student-orders-btn"
+                            type="button"
+                            onClick={async () => {
+                              const num = Number(studentPreparedInput);
+                              const validCash =
+                                myCurrentPaymentMethod === 'cash'
+                                  ? Number.isFinite(num) && num >= myTotalRequired
+                                    ? num
+                                    : myTotalRequired
+                                  : 0;
+                              if (myCurrentPaymentMethod === 'cash') {
+                                setStudentPreparedInput(String(validCash));
+                              }
+                              await applyPaymentAcrossMyOrders(
+                                combinedMyStudentOrders,
+                                myCurrentPaymentMethod,
+                                validCash
+                              );
+                              const changeVal =
+                                myCurrentPaymentMethod === 'cash'
+                                  ? Math.max(0, Math.round((validCash - myTotalRequired) * 100) / 100)
+                                  : 0;
+                              setStudentOrderSubmittedMsg(
+                                myCurrentPaymentMethod === 'cash'
+                                  ? `تم إرسال طلبك للمشرف بنجاح ✅ (المطلوب: ${myTotalRequired} ج.م${
+                                      activeDeliveryFee > 0 ? ` شاملة ${activeDeliveryFee} ج.م دليفري` : ''
+                                    } · هتجهز: ${validCash} ج.م${
+                                      changeVal > 0 ? ` · الباقي ليك: ${changeVal} ج.م` : ''
+                                    })`
+                                  : `تم إرسال طلبك للمشرف بنجاح ✅ (المطلوب فودافون كاش: ${myTotalRequired} ج.م${
+                                      activeDeliveryFee > 0 ? ` شاملة ${activeDeliveryFee} ج.م دليفري` : ''
+                                    })`
+                              );
+                            }}
+                            className="w-full h-12 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-[0.99] text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer"
+                          >
+                            <span>
+                              إرسال الطلب للمشرف ({myTotalRequired} ج.م
+                              {activeDeliveryFee > 0 ? ` شاملة ${activeDeliveryFee} ج.م دليفري` : ''})
+                            </span>
+                          </button>
+                        </div>
                       </>
                     )}
                   </div>
@@ -1540,26 +1933,9 @@ export default function App() {
 
         {/* EDITION 2: SUPERVISOR EDITION PASSCODE GATE (0902) */}
         {!showEntryScreen && edition === 'master' && !isMasterUnlocked && (
-          <div id="master-passcode-gate" className="max-w-md mx-auto mt-6">
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
-              <div className="pb-3 border-b border-slate-100 flex items-center gap-3">
-                <img
-                  src="/icon.svg"
-                  alt="أيقونة طلبات السكن"
-                  referrerPolicy="no-referrer"
-                  className="w-12 h-12 rounded-2xl shadow-xs shrink-0"
-                />
-                <div>
-                  <h1 className="text-lg font-bold text-slate-900">
-                    دخول نسخة المشرف
-                  </h1>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    نسخة المشرف محمية بباسورد علشان تظهر للمشرف بس.
-                  </p>
-                </div>
-              </div>
-
-              <form onSubmit={handleUnlockMaster} className="space-y-4" noValidate>
+          <div id="master-passcode-gate" className="max-w-md mx-auto mt-4">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-3">
+              <form onSubmit={handleUnlockMaster} className="space-y-3" noValidate>
                 <div>
                   <label
                     htmlFor="master-passcode-input"
@@ -1571,7 +1947,6 @@ export default function App() {
                     id="master-passcode-input"
                     type="password"
                     inputMode="numeric"
-                    autoFocus
                     placeholder="اكتب الباسورد..."
                     value={passcodeInput}
                     onChange={(e) => {
@@ -1600,10 +1975,15 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleSelectEdition('student')}
+                    onClick={() => {
+                      setPasscodeInput('');
+                      setPasscodeError(null);
+                      setEdition('student');
+                      setShowEntryScreen(true);
+                    }}
                     className="min-h-[44px] px-4 py-2.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors whitespace-nowrap cursor-pointer"
                   >
-                    رجوع لنسخة الطلاب
+                    رجوع لشاشة الدخول
                   </button>
                 </div>
               </form>

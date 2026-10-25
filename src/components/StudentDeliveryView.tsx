@@ -51,9 +51,6 @@ export const StudentDeliveryView: React.FC<StudentDeliveryViewProps> = ({
             <h2 className="text-base sm:text-lg font-bold text-slate-900">
               تسليم الطلبات للطلاب
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              اسم كل طالب وحاجاته المجمعة علشان تديهاله وتعلّم على التسليم.
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
@@ -149,6 +146,27 @@ export const StudentDeliveryView: React.FC<StudentDeliveryViewProps> = ({
       ) : (
         <div className="mt-2 divide-y divide-slate-100">
           {visibleSummaries.map((summary) => {
+            const groupedItemsMap = new Map<
+              string,
+              { key: string; itemName: string; quantity: number; unitPrice: number }
+            >();
+            for (const item of summary.items) {
+              const cleanPrice = Math.round(item.unitPrice * 100) / 100;
+              const groupKey = `${item.normalizedItemKey || item.itemName.trim()}__${cleanPrice}`;
+              const existing = groupedItemsMap.get(groupKey);
+              if (existing) {
+                existing.quantity += item.quantity;
+              } else {
+                groupedItemsMap.set(groupKey, {
+                  key: groupKey,
+                  itemName: item.itemName,
+                  quantity: item.quantity,
+                  unitPrice: cleanPrice,
+                });
+              }
+            }
+            const groupedItems = Array.from(groupedItemsMap.values());
+
             return (
               <div
                 key={`delivery_${summary.roommateName}_${summary.roomNumber}`}
@@ -183,9 +201,9 @@ export const StudentDeliveryView: React.FC<StudentDeliveryViewProps> = ({
                   {/* Student's Items List */}
                   <div className="flex flex-wrap items-center gap-1.5 text-xs">
                     <span className="font-bold text-slate-600 ml-1">حاجاته:</span>
-                    {summary.items.map((item) => (
+                    {groupedItems.map((item) => (
                       <span
-                        key={item.id}
+                        key={item.key}
                         className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border font-semibold ${
                           summary.isDelivered
                             ? 'bg-slate-50 border-slate-200 text-slate-500 line-through'
@@ -196,6 +214,9 @@ export const StudentDeliveryView: React.FC<StudentDeliveryViewProps> = ({
                           {item.quantity} ×
                         </strong>
                         <span>{item.itemName}</span>
+                        <span className="text-slate-500 font-mono tabular-nums">
+                          (سعر {item.unitPrice} ج.م)
+                        </span>
                       </span>
                     ))}
                   </div>

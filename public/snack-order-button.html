@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Snack Order Button — Interactive Demo</title>
+    <style>
+      /* ======================================================================
+       * 1. Page & Demo Stage Layout (White Demo Card Centered on Dark Navy)
+       * ====================================================================== */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: radial-gradient(circle at 50% 25%, #162447 0%, #0b132b 70%);
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        color: #0f172a;
+      }
+
+      .demo-stage {
+        width: 100%;
+        max-width: 440px;
+        background: #ffffff;
+        border-radius: 32px;
+        padding: 52px 36px;
+        box-shadow: 0 28px 70px rgba(0, 0, 0, 0.55);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: 28px;
+      }
+
+      .demo-title {
+        font-size: 1.5rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        color: #0f172a;
+      }
+
+      .demo-subtitle {
+        font-size: 0.875rem;
+        color: #64748b;
+        margin-top: 6px;
+      }
+
+      /* ======================================================================
+       * 2. Rounded Black Snack Order Button & Focus / Hover States
+       * ====================================================================== */
+      .snack-order-btn {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 224px;
+        height: 64px;
+        padding: 0 28px;
+        border-radius: 9999px;
+        background: linear-gradient(145deg, #181a24 0%, #0b0c10 100%);
+        color: #ffffff;
+        border: 2px solid rgba(255, 255, 255, 0.14);
+        box-shadow:
+          0 16px 34px rgba(11, 12, 16, 0.35),
+          inset 0 1px 1px rgba(255, 255, 255, 0.2);
+        cursor: pointer;
+        overflow: visible;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+        transition:
+          transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+          box-shadow 0.25s ease,
+          border-color 0.25s ease;
+      }
+
+      .snack-order-btn:hover:not(:disabled) {
+        transform: translateY(-2px);
+        border-color: rgba(250, 204, 21, 0.6);
+        box-shadow:
+          0 20px 40px rgba(11, 12, 16, 0.45),
+          0 0 20px rgba(250, 204, 21, 0.22);
+      }
+
+      .snack-order-btn:active:not(:disabled) {
+        transform: translateY(0) scale(0.98);
+      }
+
+      /* Visible keyboard focus ring */
+      .snack-order-btn:focus-visible {
+        outline: 3px solid #f59e0b;
+        outline-offset: 4px;
+      }
+
+      .snack-order-btn:disabled {
+        cursor: default;
+      }
+
+      /* ======================================================================
+       * 3. Idle Content: Chips Bag on Left + "Order" Text on Right
+       * ====================================================================== */
+      .snack-btn-idle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        width: 100%;
+      }
+
+      /* Step 1: Fade out "Order" text on click */
+      .snack-btn-label {
+        font-size: 1.125rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        color: #ffffff;
+        transition:
+          opacity 0.26s ease,
+          transform 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      .snack-order-btn.is-animating .snack-btn-label {
+        opacity: 0;
+        transform: translateX(14px) scale(0.88);
+      }
+
+      /* ======================================================================
+       * 4. Chips Bag Keyframe Sequence (Slide -> Tube -> Launch -> Bounce)
+       * ====================================================================== */
+      .snack-bag-actor {
+        position: relative;
+        z-index: 6;
+        width: 38px;
+        height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transform-origin: center center;
+        will-change: transform, opacity;
+      }
+
+      .snack-order-btn.is-animating .snack-bag-actor {
+        animation: snackBagJourney 2.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      }
+
+      @keyframes snackBagJourney {
+        /* Idle on left */
+        0% {
+          transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+          opacity: 1;
+        }
+        /* Step 2: Slide to center of button & shrink slightly */
+        18% {
+          transform: translate3d(34px, 0, 0) scale(0.84) rotate(-4deg);
+          opacity: 1;
+        }
+        /* Step 3: Pulled down into packing cannon tube */
+        38% {
+          transform: translate3d(34px, 13px, 0) scale(0.38) rotate(0deg);
+          opacity: 0.35;
+        }
+        /* Step 4: Inside tube during brief loading effect */
+        64% {
+          transform: translate3d(34px, 15px, 0) scale(0.32) rotate(0deg);
+          opacity: 0.2;
+        }
+        /* Step 5a: Launches upward from tube & rotates gently */
+        79% {
+          transform: translate3d(34px, -38px, 0) scale(1.15) rotate(-14deg);
+          opacity: 1;
+        }
+        /* Step 5b: Lands with a small bounce */
+        89% {
+          transform: translate3d(34px, 4px, 0) scale(0.93) rotate(6deg);
+          opacity: 1;
+        }
+        95% {
+          transform: translate3d(34px, -3px, 0) scale(1.02) rotate(-2deg);
+          opacity: 1;
+        }
+        /* Step 6 handoff: Yields to green checkmark */
+        100% {
+          transform: translate3d(34px, 0, 0) scale(0.5) rotate(0deg);
+          opacity: 0;
+        }
+      }
+
+      /* ======================================================================
+       * 5. Colorful Delivery Tube / Packing Cannon Inside the Button
+       * ====================================================================== */
+      .snack-cannon-tube {
+        position: absolute;
+        left: 50%;
+        bottom: 5px;
+        width: 48px;
+        height: 28px;
+        transform: translate3d(-50%, 18px, 0) scale(0.5);
+        opacity: 0;
+        z-index: 5;
+        pointer-events: none;
+      }
+
+      .snack-order-btn.is-animating .snack-cannon-tube {
+        animation: snackCannonLifecycle 2.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      }
+
+      @keyframes snackCannonLifecycle {
+        0%,
+        12% {
+          transform: translate3d(-50%, 18px, 0) scale(0.5);
+          opacity: 0;
+        }
+        26% {
+          transform: translate3d(-50%, 0, 0) scale(1);
+          opacity: 1;
+        }
+        42%,
+        62% {
+          transform: translate3d(-50%, 2px, 0) scaleX(1.12) scaleY(0.88);
+          opacity: 1;
+        }
+        68% {
+          transform: translate3d(-50%, -4px, 0) scaleX(0.92) scaleY(1.14);
+          opacity: 1;
+        }
+        85%,
+        100% {
+          transform: translate3d(-50%, 16px, 0) scale(0.5);
+          opacity: 0;
+        }
+      }
+
+      /* ======================================================================
+       * 6. Brief Loading Effect: Rotating Dots + Progress Line
+       * ====================================================================== */
+      .snack-loading-stage {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 26px 7px;
+        pointer-events: none;
+        opacity: 0;
+        z-index: 7;
+      }
+
+      .snack-order-btn.is-animating .snack-loading-stage {
+        animation: snackLoadingVisibility 2.35s ease forwards;
+      }
+
+      @keyframes snackLoadingVisibility {
+        0%,
+        34% {
+          opacity: 0;
+        }
+        40%,
+        63% {
+          opacity: 1;
+        }
+        68%,
+        100% {
+          opacity: 0;
+        }
+      }
+
+      .snack-rotating-dots {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .snack-rotating-dots span {
+        width: 6px;
+        height: 6px;
+        border-radius: 9999px;
+        background: #fde047;
+        box-shadow: 0 0 8px rgba(250, 204, 21, 0.8);
+        animation: snackDotPulse 0.45s ease-in-out infinite alternate;
+      }
+
+      .snack-rotating-dots span:nth-child(2) {
+        background: #38bdf8;
+        animation-delay: 0.12s;
+      }
+
+      .snack-rotating-dots span:nth-child(3) {
+        background: #f43f5e;
+        animation-delay: 0.24s;
+      }
+
+      @keyframes snackDotPulse {
+        0% {
+          transform: translateY(0) scale(0.8);
+          opacity: 0.55;
+        }
+        100% {
+          transform: translateY(-4px) scale(1.25);
+          opacity: 1;
+        }
+      }
+
+      .snack-progress-track {
+        width: 100%;
+        max-width: 140px;
+        height: 4px;
+        border-radius: 9999px;
+        background: rgba(255, 255, 255, 0.14);
+        overflow: hidden;
+      }
+
+      .snack-progress-fill {
+        width: 0%;
+        height: 100%;
+        border-radius: 9999px;
+        background: linear-gradient(90deg, #facc15 0%, #38bdf8 50%, #22c55e 100%);
+      }
+
+      .snack-order-btn.is-animating .snack-progress-fill {
+        animation: snackProgressFill 2.35s linear forwards;
+      }
+
+      @keyframes snackProgressFill {
+        0%,
+        36% {
+          width: 0%;
+        }
+        64%,
+        100% {
+          width: 100%;
+        }
+      }
+
+      /* ======================================================================
+       * 7. Green Checkmark & "Order placed!" State (2 Seconds)
+       * ====================================================================== */
+      .snack-success-overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        opacity: 0;
+        transform: translateY(8px) scale(0.94);
+        pointer-events: none;
+        z-index: 8;
+        transition:
+          opacity 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+          transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      .snack-order-btn.is-success .snack-success-overlay {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+
+      .snack-order-btn.is-success {
+        border-color: rgba(34, 197, 94, 0.65);
+        box-shadow:
+          0 16px 34px rgba(11, 12, 16, 0.4),
+          0 0 24px rgba(34, 197, 94, 0.28);
+      }
+
+      .snack-check-badge {
+        width: 28px;
+        height: 28px;
+        border-radius: 9999px;
+        background: #22c55e;
+        color: #052e16;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 0 14px rgba(34, 197, 94, 0.6);
+      }
+
+      .snack-success-text {
+        font-size: 1rem;
+        font-weight: 800;
+        color: #4ade80;
+        letter-spacing: 0.01em;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="demo-stage">
+      <div>
+        <h1 class="demo-title">Snack Order Button</h1>
+        <p class="demo-subtitle">Click to pack &amp; launch your crispy chips order</p>
+      </div>
+
+      <!-- Interactive Rounded Black Snack Order Button -->
+      <button
+        id="snackOrderBtn"
+        type="button"
+        class="snack-order-btn"
+        aria-live="polite"
+      >
+        <span class="snack-btn-idle">
+          <!-- Colorful Inline SVG Chips Bag (Red & Yellow Package + Potato Chips + Original "CRISP" Label) -->
+          <span class="snack-bag-actor" aria-hidden="true">
+            <svg viewBox="0 0 48 56" width="38" height="44" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="bagRed" x1="6" y1="6" x2="42" y2="50" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#ff4d4d" />
+                  <stop offset="52%" stop-color="#e11d48" />
+                  <stop offset="100%" stop-color="#9f1239" />
+                </linearGradient>
+                <linearGradient id="bagGold" x1="8" y1="18" x2="40" y2="34" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#fef08a" />
+                  <stop offset="50%" stop-color="#facc15" />
+                  <stop offset="100%" stop-color="#eab308" />
+                </linearGradient>
+              </defs>
+              <!-- Top Zig-Zag Seal -->
+              <path d="M9 7L12 4L15 7L18 4L21 7L24 4L27 7L30 4L33 7L36 4L39 7V11H9V7Z" fill="#facc15" />
+              <!-- Bag Body -->
+              <path
+                d="M9 10C9 10 6.5 22 7.5 31C8.5 40 9.5 47 9.5 47H38.5C38.5 47 39.5 40 40.5 31C41.5 22 39 10 39 10H9Z"
+                fill="url(#bagRed)"
+                stroke="#fda4af"
+                stroke-width="0.9"
+              />
+              <!-- Golden Ribbon -->
+              <path d="M7.6 22L40.4 18.5L40.2 30.5L7.8 33.5L7.6 22Z" fill="url(#bagGold)" />
+              <!-- Original Branding -->
+              <rect x="13" y="21.5" width="22" height="8.5" rx="4.25" fill="#7f1d1d" />
+              <text x="24" y="27.5" text-anchor="middle" fill="#fef08a" font-size="5.6" font-weight="900" font-family="sans-serif" letter-spacing="0.6">CRISP</text>
+              <!-- Potato Chip Shapes -->
+              <ellipse cx="19" cy="39" rx="6.2" ry="4.4" transform="rotate(-16 19 39)" fill="#fde047" stroke="#ca8a04" stroke-width="1" />
+              <ellipse cx="28.5" cy="38.5" rx="6.5" ry="4.6" transform="rotate(14 28.5 38.5)" fill="#facc15" stroke="#b45309" stroke-width="1" />
+              <ellipse cx="24" cy="41.5" rx="5.5" ry="3.8" fill="#fef08a" stroke="#ca8a04" stroke-width="0.9" />
+              <circle cx="18" cy="38.5" r="0.6" fill="#b45309" />
+              <circle cx="23.5" cy="41" r="0.65" fill="#b45309" />
+              <circle cx="29.5" cy="38" r="0.6" fill="#b45309" />
+              <!-- Foil Highlight -->
+              <path d="M11.5 12.5C10.5 21 10.5 32 11.8 44" stroke="rgba(255,255,255,0.42)" stroke-width="1.6" stroke-linecap="round" />
+              <!-- Bottom Zig-Zag Seal -->
+              <path d="M9.5 46.5H38.5L39.5 50L36 52L33 49.5L30 52L27 49.5L24 52L21 49.5L18 52L15 49.5L12 52L8.5 50L9.5 46.5Z" fill="#facc15" />
+            </svg>
+          </span>
+          <span class="snack-btn-label">Order</span>
+        </span>
+
+        <!-- Packing Cannon / Delivery Tube -->
+        <span class="snack-cannon-tube" aria-hidden="true">
+          <svg viewBox="0 0 56 34" width="48" height="28" fill="none">
+            <rect x="8" y="8" width="40" height="22" rx="6" fill="#1e293b" stroke="#38bdf8" stroke-width="1.8" />
+            <rect x="11" y="15" width="34" height="4" rx="2" fill="#facc15" />
+            <rect x="11" y="21" width="34" height="3" rx="1.5" fill="#ec4899" />
+            <rect x="4" y="3" width="48" height="7" rx="3.5" fill="#38bdf8" stroke="#bae6fd" stroke-width="1.2" />
+            <ellipse cx="28" cy="6.5" rx="19" ry="2.5" fill="#090d16" />
+          </svg>
+        </span>
+
+        <!-- Brief Loading Stage (Rotating Dots + Progress Line) -->
+        <span class="snack-loading-stage" aria-hidden="true">
+          <span class="snack-rotating-dots">
+            <span></span>
+            <span></span>
+            <span></span>
+          </span>
+          <span class="snack-progress-track">
+            <span class="snack-progress-fill"></span>
+          </span>
+        </span>
+
+        <!-- Green Checkmark & "Order placed!" Message -->
+        <span class="snack-success-overlay">
+          <span class="snack-check-badge" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </span>
+          <span class="snack-success-text">Order placed!</span>
+        </span>
+      </button>
+    </main>
+
+    <script>
+      (function () {
+        const btn = document.getElementById('snackOrderBtn');
+        let isRunning = false;
+
+        btn.addEventListener('click', function () {
+          // Disable repeated clicks while animation is running
+          if (isRunning) return;
+          isRunning = true;
+          btn.disabled = true;
+          btn.setAttribute('aria-busy', 'true');
+
+          // Steps 1-5: Fade text, slide bag, pull into tube, load, launch & bounce
+          btn.classList.add('is-animating');
+
+          // Step 6: Show green checkmark and "Order placed!" for 2 seconds
+          setTimeout(function () {
+            btn.classList.add('is-success');
+          }, 2250);
+
+          // Step 7: Reset smoothly to allow animation to play again
+          setTimeout(function () {
+            btn.classList.remove('is-animating', 'is-success');
+            btn.disabled = false;
+            btn.removeAttribute('aria-busy');
+            isRunning = false;
+          }, 4250);
+        });
+      })();
+    </script>
+  </body>
+</html>

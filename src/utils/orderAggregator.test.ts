@@ -13,6 +13,7 @@ function createMockOrder(overrides: Partial<RoommateOrderItem>): RoommateOrderIt
   const itemName = overrides.itemName ?? 'شيبسي';
   return {
     id: overrides.id ?? 'ord_1',
+    deviceId: overrides.deviceId,
     sessionId: 'session_1',
     sessionOwnerId: 'user_1',
     authorUid: 'user_1',
@@ -120,7 +121,7 @@ test('calculateRoommateSummaries keeps cash orders unpaid (not خالص) until M
   assert.equal(financials.cashShortfall, 30);
 });
 
-test('validateOrderItemInput requires choosing a room (rejects empty roomNumber) and rejects invalid rooms like 411', () => {
+test('validateOrderItemInput requires a room number (rejects empty or non-numeric roomNumber) and normalizes typed room numbers', () => {
   const emptyRoom = validateOrderItemInput({
     roommateName: 'ياسين',
     roomNumber: '',
@@ -134,9 +135,9 @@ test('validateOrderItemInput requires choosing a room (rejects empty roomNumber)
   });
   assert.equal(emptyRoom.valid, false);
 
-  const invalidRoom411 = validateOrderItemInput({
+  const invalidNonNumericRoom = validateOrderItemInput({
     roommateName: 'ياسين',
-    roomNumber: 'غرفة 411',
+    roomNumber: 'غرفة بدون رقم',
     itemName: 'شيبسي',
     category: 'snacks',
     quantity: 2,
@@ -145,11 +146,11 @@ test('validateOrderItemInput requires choosing a room (rejects empty roomNumber)
     cashPaidAmount: 30,
     notes: '',
   });
-  assert.equal(invalidRoom411.valid, false);
+  assert.equal(invalidNonNumericRoom.valid, false);
 
-  const validRoom410 = validateOrderItemInput({
+  const validTypedRoom = validateOrderItemInput({
     roommateName: 'ياسين',
-    roomNumber: 'غرفة 410',
+    roomNumber: '410',
     itemName: 'شيبي',
     category: 'snacks',
     quantity: 3,
@@ -158,10 +159,10 @@ test('validateOrderItemInput requires choosing a room (rejects empty roomNumber)
     cashPaidAmount: 50,
     notes: 'ملح وخل',
   });
-  assert.equal(validRoom410.valid, true);
-  assert.equal(validRoom410.sanitized?.roomNumber, 'غرفة 410');
-  assert.equal(validRoom410.sanitized?.normalizedItemKey, 'شيبسي');
-  assert.equal(validRoom410.sanitized?.cashPaidAmount, 50);
+  assert.equal(validTypedRoom.valid, true);
+  assert.equal(validTypedRoom.sanitized?.roomNumber, 'غرفة 410');
+  assert.equal(validTypedRoom.sanitized?.normalizedItemKey, 'شيبسي');
+  assert.equal(validTypedRoom.sanitized?.cashPaidAmount, 50);
 });
 
 test('verifyMasterPasscode accepts only 0902', async () => {
@@ -174,14 +175,14 @@ test('verifyMasterPasscode accepts only 0902', async () => {
 
 test('MQTT topic helpers format sakan_app/{roomCode}/orders/{orderId} and wildcard correctly', async () => {
   const { getOrderTopic, getOrdersWildcardTopic, DEFAULT_ROOM_CODE } = await import('../lib/mqttSync.ts');
-  assert.equal(DEFAULT_ROOM_CODE, 'sakan-orders-2026-v3');
+  assert.equal(DEFAULT_ROOM_CODE, 'sakan-orders-2026-v4');
   assert.equal(
-    getOrderTopic('sakan-orders-2026-v3', 'ord_123'),
-    'sakan_app/sakan-orders-2026-v3/orders/ord_123'
+    getOrderTopic('sakan-orders-2026-v4', 'ord_123'),
+    'sakan_app/sakan-orders-2026-v4/orders/ord_123'
   );
   assert.equal(
-    getOrdersWildcardTopic('sakan-orders-2026-v3'),
-    'sakan_app/sakan-orders-2026-v3/orders/+'
+    getOrdersWildcardTopic('sakan-orders-2026-v4'),
+    'sakan_app/sakan-orders-2026-v4/orders/+'
   );
 });
 
@@ -277,5 +278,139 @@ test('filterOrdersForMaster filters by room, payment, delivery, store purchase, 
   assert.equal(searchAlias[0].id, 'o1');
 });
 
+test('calculateRoommateSummaries and calculateSessionFinancials apply Supervisor delivery fee per student', () => {
+  const orders: RoommateOrderItem[] = [
+    createMockOrder({
+      id: 'd1',
+      roommateName: 'يامن الريس',
+      roomNumber: 'غرفة 406',
+      itemName: 'شيبسي',
+      quantity: 2,
+      unitPrice: 15, // 30 EGP items
+      paymentMethod: 'cash',
+      cashPaidAmount: 50, // prepared 50 EGP
+      isPaid: false,
+    }),
+  ];
+
+  // When Supervisor enables delivery with 10 EGP fee:
+  const summaries = calculateRoommateSummaries(orders, 10);
+  assert.equal(summaries.length, 1);
+  assert.equal(summaries[0].itemsSubtotal, 30);
+  assert.equal(summaries[0].deliveryShare, 10);
+  assert.equal(summaries[0].totalRequired, 40);
+  assert.equal(summaries[0].changeDue, 10); // 50 - 40 = 10 EGP
+
+  const financials = calculateSessionFinancials(orders, 10);
+  assert.equal(financials.itemsSubtotal, 30);
+  assert.equal(financials.deliveryFee, 10);
+  assert.equal(financials.grandTotal, 40);
+  assert.equal(financials.totalChangeToReturn, 10);
+  assert.equal(financials.cashShortfall, 40);
+});
+
+test('same student ordering twice is grouped under a single name and aggregateOrdersForMaster separates priceBreakdown per unit price', () => {
+  const orders: RoommateOrderItem[] = [
+    createMockOrder({
+      id: 'o_10',
+      roommateName: 'عمر سمير',
+      roomNumber: 'غرفة 405',
+      itemName: 'شيبسي',
+      normalizedItemKey: 'شيبسي',
+      quantity: 1,
+      unitPrice: 10,
+      cashPaidAmount: 25,
+    }),
+    createMockOrder({
+      id: 'o_15',
+      roommateName: 'عمر  سمير',
+      roomNumber: 'غرفة 405',
+      itemName: 'شيبسي',
+      normalizedItemKey: 'شيبسي',
+      quantity: 1,
+      unitPrice: 15,
+      cashPaidAmount: 0,
+    }),
+  ];
+
+  const summaries = calculateRoommateSummaries(orders, 0);
+  assert.equal(summaries.length, 1);
+  assert.equal(summaries[0].roommateName, 'عمر سمير');
+  assert.equal(summaries[0].itemsCount, 2);
+  assert.equal(summaries[0].itemsSubtotal, 25);
+
+  const aggregated = aggregateOrdersForMaster(orders);
+  assert.equal(aggregated.length, 1);
+  assert.equal(aggregated[0].totalQuantity, 2);
+  assert.equal(aggregated[0].requesters.length, 1);
+  assert.equal(aggregated[0].requesters[0].quantity, 2);
+  assert.equal(aggregated[0].priceBreakdown.length, 2);
+  assert.deepEqual(aggregated[0].priceBreakdown[0], {
+    unitPrice: 10,
+    quantity: 1,
+    subtotal: 10,
+  });
+  assert.deepEqual(aggregated[0].priceBreakdown[1], {
+    unitPrice: 15,
+    quantity: 1,
+    subtotal: 15,
+  });
+});
+
+test('canUserModifyOrder enforces strict ownership by deviceId or student profile unless Supervisor unlocked', async () => {
+  const { canUserModifyOrder } = await import('./orderAggregator.ts');
+  const order = createMockOrder({
+    id: 'ord_sec_1',
+    deviceId: 'dev_owner_123',
+    roommateName: 'ياسين',
+    roomNumber: 'غرفة 404',
+  });
+
+  // Matching deviceId + matching student profile is allowed
+  assert.equal(
+    canUserModifyOrder(order, {
+      deviceId: 'dev_owner_123',
+      name: 'ياسين',
+      room: 'غرفة 404',
+      isSupervisorUnlocked: false,
+    }),
+    true
+  );
+
+  // Different deviceId or different student is rejected
+  assert.equal(
+    canUserModifyOrder(order, {
+      deviceId: 'dev_intruder_999',
+      name: 'مخترق',
+      room: 'غرفة 408',
+      isSupervisorUnlocked: false,
+    }),
+    false
+  );
+
+  // Supervisor (isSupervisorUnlocked=true) is allowed
+  assert.equal(
+    canUserModifyOrder(order, {
+      deviceId: 'dev_supervisor',
+      isSupervisorUnlocked: true,
+    }),
+    true
+  );
+});
+
+test('validateOrderItemInput blocks XSS/SQLi injection attempts in name or item fields', () => {
+  const xssAttempt = validateOrderItemInput({
+    roommateName: '<script>alert(1)</script>',
+    roomNumber: 'غرفة 404',
+    itemName: 'شيبسي',
+    category: 'snacks',
+    quantity: 1,
+    unitPrice: 15,
+    paymentMethod: 'cash',
+    cashPaidAmount: 15,
+    notes: '',
+  });
+  assert.equal(xssAttempt.valid, false);
+});
 
 

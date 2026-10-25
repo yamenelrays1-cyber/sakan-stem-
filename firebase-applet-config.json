@@ -1,12 +1,12 @@
 {
-  "projectId": "scientific-plating-vv4kj",
-  "appId": "1:685862130803:web:e08232578372119da90606",
-  "apiKey": "AIzaSyBR3QI-aY2G_jtiyWBxY9GMAKx2Jtn-ArM",
-  "authDomain": "scientific-plating-vv4kj.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-ccc0553f-b13f-46a4-b683-153bfde9bb70",
-  "storageBucket": "scientific-plating-vv4kj.firebasestorage.app",
-  "messagingSenderId": "685862130803",
+  "projectId": "gen-lang-client-0265025778",
+  "appId": "1:95540180740:web:c206c37d33aa1b9d748251",
+  "apiKey": "AIzaSyCi0C79esQwD8Pya6D6B-4vHaayi0i0pBA",
+  "authDomain": "gen-lang-client-0265025778.firebaseapp.com",
+  "storageBucket": "gen-lang-client-0265025778.firebasestorage.app",
+  "messagingSenderId": "95540180740",
   "measurementId": "",
-  "oAuthClientId": "685862130803-29bvds4u8brjmdi5rdi4pt7fhjjsj11v.apps.googleusercontent.com",
+  "oAuthClientId": "95540180740-t1qah73a8f6dn1341ceullg8769rqfe8.apps.googleusercontent.com",
+  "firestoreDatabaseId": "ai-studio-ccc0553f-b13f-46a4-b683-153bfde9bb70",
   "recaptchaSiteKey": ""
 }

@@ -53,9 +53,6 @@ export const CashSettlementView: React.FC<CashSettlementViewProps> = ({
             <h2 className="text-base sm:text-lg font-bold text-slate-900">
               الاسم والأوض والطلبات والباقي
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              كل طالب طلب إيه، في أنهي أوضة، دفع كام، والباقي ليه كام مع زرار خالص لتسوية الباقي.
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
@@ -171,6 +168,27 @@ export const CashSettlementView: React.FC<CashSettlementViewProps> = ({
           <div className="mt-2 divide-y divide-slate-100 md:hidden">
             {visibleSummaries.map((summary) => {
               const isVodafoneCash = summary.paymentMethod !== 'cash';
+              const groupedItemsMap = new Map<
+                string,
+                { key: string; itemName: string; quantity: number; unitPrice: number }
+              >();
+              for (const item of summary.items) {
+                const cleanPrice = Math.round(item.unitPrice * 100) / 100;
+                const groupKey = `${item.normalizedItemKey || item.itemName.trim()}__${cleanPrice}`;
+                const existing = groupedItemsMap.get(groupKey);
+                if (existing) {
+                  existing.quantity += item.quantity;
+                } else {
+                  groupedItemsMap.set(groupKey, {
+                    key: groupKey,
+                    itemName: item.itemName,
+                    quantity: item.quantity,
+                    unitPrice: cleanPrice,
+                  });
+                }
+              }
+              const groupedItems = Array.from(groupedItemsMap.values());
+
               return (
                 <div
                   key={`mob_${summary.roommateName}_${summary.roomNumber}`}
@@ -191,9 +209,9 @@ export const CashSettlementView: React.FC<CashSettlementViewProps> = ({
                   {/* Student's Ordered Items (الطلبات) clearly highlighted */}
                   <div className="flex flex-wrap items-center gap-1.5 text-xs">
                     <span className="font-bold text-slate-700 ml-1">الطلبات:</span>
-                    {summary.items.map((item) => (
+                    {groupedItems.map((item) => (
                       <span
-                        key={item.id}
+                        key={item.key}
                         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 font-semibold text-slate-900"
                       >
                         <strong className="font-mono tabular-nums text-amber-800">
@@ -201,10 +219,15 @@ export const CashSettlementView: React.FC<CashSettlementViewProps> = ({
                         </strong>
                         <span>{item.itemName}</span>
                         <span className="text-slate-500 font-mono tabular-nums">
-                          ({item.quantity * item.unitPrice} ج.م)
+                          (سعر {item.unitPrice} ج.م)
                         </span>
                       </span>
                     ))}
+                    {summary.deliveryShare > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 font-bold text-amber-900 font-mono tabular-nums">
+                        + دليفري: {summary.deliveryShare} ج.م
+                      </span>
+                    )}
                   </div>
 
                   <div className="text-xs flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -277,6 +300,26 @@ export const CashSettlementView: React.FC<CashSettlementViewProps> = ({
               <tbody className="divide-y divide-slate-100 text-sm">
                 {visibleSummaries.map((summary) => {
                   const isVodafoneCash = summary.paymentMethod !== 'cash';
+                  const groupedItemsMap = new Map<
+                    string,
+                    { key: string; itemName: string; quantity: number; unitPrice: number }
+                  >();
+                  for (const item of summary.items) {
+                    const cleanPrice = Math.round(item.unitPrice * 100) / 100;
+                    const groupKey = `${item.normalizedItemKey || item.itemName.trim()}__${cleanPrice}`;
+                    const existing = groupedItemsMap.get(groupKey);
+                    if (existing) {
+                      existing.quantity += item.quantity;
+                    } else {
+                      groupedItemsMap.set(groupKey, {
+                        key: groupKey,
+                        itemName: item.itemName,
+                        quantity: item.quantity,
+                        unitPrice: cleanPrice,
+                      });
+                    }
+                  }
+                  const groupedItems = Array.from(groupedItemsMap.values());
 
                   return (
                     <tr
@@ -293,20 +336,25 @@ export const CashSettlementView: React.FC<CashSettlementViewProps> = ({
 
                       <td className="py-3.5 px-3 align-top">
                         <div className="flex flex-wrap gap-1.5 text-xs text-slate-900">
-                          {summary.items.map((item) => (
+                          {groupedItems.map((item) => (
                             <span
-                              key={item.id}
+                              key={item.key}
                               className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-slate-50 border border-slate-200 font-semibold whitespace-nowrap"
                             >
                               <strong className="font-mono tabular-nums text-amber-800">
                                 {item.quantity} ×
                               </strong>
                               <span>{item.itemName}</span>
-                              <span className="text-slate-400 font-mono tabular-nums">
-                                ({item.quantity * item.unitPrice} ج.م)
+                              <span className="text-slate-500 font-mono tabular-nums">
+                                (سعر {item.unitPrice} ج.م)
                               </span>
                             </span>
                           ))}
+                          {summary.deliveryShare > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-amber-50 border border-amber-200 font-bold text-amber-900 font-mono tabular-nums whitespace-nowrap">
+                              + دليفري: {summary.deliveryShare} ج.م
+                            </span>
+                          )}
                         </div>
                       </td>
 

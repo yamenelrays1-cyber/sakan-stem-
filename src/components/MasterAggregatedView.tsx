@@ -54,9 +54,6 @@ export const MasterAggregatedView: React.FC<MasterAggregatedViewProps> = ({
             <h2 className="text-base sm:text-lg font-bold text-slate-900">
               مجموع الطلبات الكلي
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              تجميع تلقائي لكل الأصناف المتشابهة مع تفصيل الأوض والطلاب.
-            </p>
           </div>
 
           <div className="flex items-center gap-2 text-xs text-slate-700 font-mono tabular-nums bg-slate-100 px-2.5 py-1 rounded-lg font-bold">
@@ -121,7 +118,7 @@ export const MasterAggregatedView: React.FC<MasterAggregatedViewProps> = ({
             <input
               type="search"
               aria-label="بحث في مجموع الطلبات الكلي"
-              placeholder="بحث بالصنف أو الاسم..."
+              placeholder="بحث بالصنف..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="h-8 w-40 sm:w-48 px-2.5 text-xs bg-slate-50 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900"
@@ -155,14 +152,10 @@ export const MasterAggregatedView: React.FC<MasterAggregatedViewProps> = ({
       ) : (
         <div className="mt-2 divide-y divide-slate-100">
           {visibleItems.map((group) => {
-            const roomTotals = new Map<string, number>();
-            for (const r of group.requesters || []) {
-              const room = r.roomNumber || 'غرفة 404';
-              roomTotals.set(room, (roomTotals.get(room) || 0) + r.quantity);
-            }
-            const roomEntries = Array.from(roomTotals.entries()).sort((a, b) =>
-              a[0].localeCompare(b[0], 'ar')
-            );
+            const tiers =
+              group.priceBreakdown && group.priceBreakdown.length > 0
+                ? group.priceBreakdown
+                : [{ unitPrice: group.unitPrice, quantity: group.totalQuantity, subtotal: group.totalCost }];
 
             return (
               <div
@@ -172,7 +165,7 @@ export const MasterAggregatedView: React.FC<MasterAggregatedViewProps> = ({
                 }`}
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <div className="flex flex-wrap items-baseline gap-2">
                       <span className="text-lg font-extrabold font-mono tabular-nums text-amber-800">
                         {group.totalQuantity} ×
@@ -184,51 +177,31 @@ export const MasterAggregatedView: React.FC<MasterAggregatedViewProps> = ({
                       >
                         {group.displayName}
                       </h3>
-                      <span className="text-xs text-slate-400" aria-hidden="true">
-                        ·
-                      </span>
-                      <span className="text-sm font-bold font-mono tabular-nums text-slate-900">
-                        الإجمالي: {group.totalCost} ج.م
-                      </span>
-                      <span className="text-xs text-slate-500 font-mono tabular-nums">
-                        ({group.unitPrice} ج.م للواحدة)
-                      </span>
                     </div>
 
-                    {/* Room Breakdown (404-410) */}
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600">
-                      <span className="font-semibold text-slate-700">توزيع الأوض:</span>
-                      {roomEntries.map(([room, qty], idx) => (
-                        <React.Fragment key={room}>
-                          {idx > 0 && (
-                            <span className="text-slate-300" aria-hidden="true">
-                              ·
-                            </span>
-                          )}
+                    {/* Price & Count Breakdown per Price Tier (سعر الواحدة / الكيس والعدد) */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {tiers.map((tier) => (
+                        <span
+                          key={tier.unitPrice}
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-50/90 border border-amber-200 text-xs sm:text-sm font-bold text-slate-900"
+                        >
                           <span>
-                            {room}: <strong className="font-mono tabular-nums">{qty}</strong>
-                          </span>
-                        </React.Fragment>
-                      ))}
-                    </div>
-
-                    {/* Student Breakdown */}
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
-                      <span className="font-semibold text-slate-600">الاسم:</span>
-                      {(group.requesters || []).map((req, idx) => (
-                        <React.Fragment key={req.orderId}>
-                          {idx > 0 && (
-                            <span className="text-slate-300" aria-hidden="true">
-                              ·
-                            </span>
-                          )}
-                          <span>
-                            {req.roommateName} ({req.roomNumber}){' '}
-                            <strong className="font-mono tabular-nums text-slate-800">
-                              ×{req.quantity}
+                            سعر{' '}
+                            <strong className="font-mono tabular-nums text-amber-900">
+                              {tier.unitPrice} ج.م
                             </strong>
                           </span>
-                        </React.Fragment>
+                          <span className="text-amber-400" aria-hidden="true">
+                            ·
+                          </span>
+                          <span>
+                            العدد:{' '}
+                            <strong className="font-mono tabular-nums text-amber-900">
+                              {tier.quantity}
+                            </strong>
+                          </span>
+                        </span>
                       ))}
                     </div>
                   </div>

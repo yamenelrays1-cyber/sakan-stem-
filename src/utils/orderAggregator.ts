@@ -7,6 +7,11 @@ import {
   type RoommateOrderItem,
   type SessionFinancialSummary,
 } from '../types/orders.ts';
+import {
+  sanitizeTextInput,
+  normalizeDormRoomInput,
+  hasDangerousInjectionPayload,
+} from './emailOtpService.ts';
 
 /**
  * Common Egyptian Arabic spelling aliases for dorm snacks, drinks, and meals
@@ -115,9 +120,26 @@ export function aggregateOrdersForMaster(orders: RoommateOrderItem[]): MasterAgg
     let purchasedQuantity = 0;
     let totalCost = 0;
     const unitPrices = new Set<number>();
+    const priceTierMap = new Map<number, { unitPrice: number; quantity: number; subtotal: number }>();
     const notesList: string[] = [];
+    const requesterMap = new Map<
+      string,
+      {
+        orderId: string;
+        roommateName: string;
+        roomNumber: string;
+        quantity: number;
+        unitPrice: number;
+        subtotal: number;
+        paymentMethod: PaymentMethod;
+        cashPaidAmount: number;
+        isPaid: boolean;
+        isPurchased: boolean;
+        notes: string;
+      }
+    >();
 
-    const requesters = groupItems.map((order) => {
+    for (const order of groupItems) {
       const subtotal = Math.round(order.quantity * order.unitPrice * 100) / 100;
       totalQuantity += order.quantity;
       if (order.isPurchased) {
@@ -125,24 +147,53 @@ export function aggregateOrdersForMaster(orders: RoommateOrderItem[]): MasterAgg
       }
       totalCost += subtotal;
       unitPrices.add(order.unitPrice);
+
+      const cleanPrice = Math.round(order.unitPrice * 100) / 100;
+      const existingTier = priceTierMap.get(cleanPrice);
+      if (existingTier) {
+        existingTier.quantity += order.quantity;
+        existingTier.subtotal = Math.round((existingTier.subtotal + subtotal) * 100) / 100;
+      } else {
+        priceTierMap.set(cleanPrice, {
+          unitPrice: cleanPrice,
+          quantity: order.quantity,
+          subtotal,
+        });
+      }
+
       if (order.notes.trim()) {
         notesList.push(`${order.roommateName}: ${order.notes.trim()}`);
       }
 
-      return {
-        orderId: order.id,
-        roommateName: order.roommateName,
-        roomNumber: order.roomNumber,
-        quantity: order.quantity,
-        unitPrice: order.unitPrice,
-        subtotal,
-        paymentMethod: order.paymentMethod,
-        cashPaidAmount: order.cashPaidAmount,
-        isPaid: order.isPaid,
-        isPurchased: order.isPurchased,
-        notes: order.notes,
-      };
-    });
+      const studentKey = `${normalizeArabicItemName(order.roommateName) || order.roommateName.trim()}__${order.roomNumber.trim()}`;
+      const existingReq = requesterMap.get(studentKey);
+      if (existingReq) {
+        existingReq.quantity += order.quantity;
+        existingReq.subtotal = Math.round((existingReq.subtotal + subtotal) * 100) / 100;
+        existingReq.cashPaidAmount = Math.round((existingReq.cashPaidAmount + order.cashPaidAmount) * 100) / 100;
+        existingReq.isPaid = existingReq.isPaid && order.isPaid;
+        existingReq.isPurchased = existingReq.isPurchased && order.isPurchased;
+      } else {
+        requesterMap.set(studentKey, {
+          orderId: order.id,
+          roommateName: order.roommateName.trim(),
+          roomNumber: order.roomNumber.trim(),
+          quantity: order.quantity,
+          unitPrice: order.unitPrice,
+          subtotal,
+          paymentMethod: order.paymentMethod,
+          cashPaidAmount: order.cashPaidAmount,
+          isPaid: order.isPaid,
+          isPurchased: order.isPurchased,
+          notes: order.notes,
+        });
+      }
+    }
+
+    const requesters = Array.from(requesterMap.values());
+    const priceBreakdown = Array.from(priceTierMap.values()).sort(
+      (a, b) => a.unitPrice - b.unitPrice
+    );
 
     const allPurchased = totalQuantity > 0 && purchasedQuantity === totalQuantity;
     const canonicalUnitPrice =
@@ -156,6 +207,7 @@ export function aggregateOrdersForMaster(orders: RoommateOrderItem[]): MasterAgg
       purchasedQuantity,
       unitPrice: unitPrices.size === 1 ? first.unitPrice : canonicalUnitPrice,
       hasMixedUnitPrices: unitPrices.size > 1,
+      priceBreakdown,
       totalCost: Math.round(totalCost * 100) / 100,
       allPurchased,
       requesters,
@@ -183,7 +235,9 @@ export function calculateRoommateSummaries(
   const byRoommate = new Map<string, RoommateOrderItem[]>();
 
   for (const order of orders) {
-    const key = `${order.roommateName.trim()}__${order.roomNumber.trim()}`;
+    const normalizedStudentName =
+      normalizeArabicItemName(order.roommateName) || order.roommateName.trim();
+    const key = `${normalizedStudentName}__${order.roomNumber.trim()}`;
     const list = byRoommate.get(key);
     if (list) {
       list.push(order);
@@ -192,10 +246,9 @@ export function calculateRoommateSummaries(
     }
   }
 
-  const roommateCount = byRoommate.size;
   const deliverySharePerPerson =
-    roommateCount > 0 && deliveryFee > 0
-      ? Math.round((deliveryFee / roommateCount) * 100) / 100
+    byRoommate.size > 0 && deliveryFee > 0
+      ? Math.round(deliveryFee * 100) / 100
       : 0;
 
   const summaries: RoommateFinancialSummary[] = [];
@@ -298,8 +351,10 @@ export function calculateSessionFinancials(
   }
 
   const cleanSubtotal = Math.round(itemsSubtotal * 100) / 100;
+  const totalDeliveryFromStudents =
+    Math.round(roommateSummaries.reduce((acc, r) => acc + r.deliveryShare, 0) * 100) / 100;
   const cleanDelivery = Math.max(0, Math.round(deliveryFee * 100) / 100);
-  const grandTotal = Math.round((cleanSubtotal + cleanDelivery) * 100) / 100;
+  const grandTotal = Math.round((cleanSubtotal + totalDeliveryFromStudents) * 100) / 100;
 
   return {
     totalUnits,
@@ -348,28 +403,48 @@ export function validateOrderItemInput(input: {
   cashPaidAmount: number | string;
   notes: string;
 }): OrderInputValidationResult {
-  const roommateName = input.roommateName.trim();
-  const roomNumber = input.roomNumber.trim();
-  const itemName = input.itemName.trim();
-  const notes = input.notes.trim();
-
-  if (!roommateName) {
-    return { valid: false, error: 'من فضلك اكتب اسمك الأول علشان المشرف يعرف الطلب بتاع مين.' };
+  if (
+    hasDangerousInjectionPayload(input.roommateName) ||
+    hasDangerousInjectionPayload(input.itemName) ||
+    hasDangerousInjectionPayload(input.notes)
+  ) {
+    return {
+      valid: false,
+      error: 'المدخلات تحتوي على أكواد أو رموز غير مسموح بها أمنياً.',
+    };
   }
-  if (roommateName.length > 60) {
+
+  const rawName = (input.roommateName || '').trim();
+  const rawItem = (input.itemName || '').trim();
+  const rawNotes = (input.notes || '').trim();
+
+  if (rawName.length > 60) {
     return { valid: false, error: 'الاسم طويل جداً (الحد الأقصى 60 حرف).' };
   }
-  if (!roomNumber) {
-    return { valid: false, error: 'من فضلك اختر الأوضة الأول.' };
+  if (rawItem.length > 100) {
+    return { valid: false, error: 'اسم الصنف طويل جداً (الحد الأقصى 100 حرف).' };
   }
-  if (!DORM_ROOMS.includes(roomNumber as (typeof DORM_ROOMS)[number])) {
-    return { valid: false, error: 'من فضلك اختر الأوضة بشكل صحيح.' };
+  if (rawNotes.length > 160) {
+    return { valid: false, error: 'الملاحظات لا يجب أن تتجاوز 160 حرف.' };
+  }
+
+  const roommateName = sanitizeTextInput(rawName, 60);
+  const rawRoomTrimmed = (input.roomNumber || '').trim();
+  const roomNumber = normalizeDormRoomInput(rawRoomTrimmed);
+  const itemName = sanitizeTextInput(rawItem, 100);
+  const notes = sanitizeTextInput(rawNotes, 160);
+
+  if (!roommateName || roommateName.length < 2) {
+    return { valid: false, error: 'من فضلك اكتب اسمك الأول علشان المشرف يعرف الطلب بتاع مين.' };
+  }
+  if (!rawRoomTrimmed) {
+    return { valid: false, error: 'من فضلك اكتب رقم الغرفة الأول.' };
+  }
+  if (!roomNumber) {
+    return { valid: false, error: 'من فضلك اكتب رقم الغرفة بشكل صحيح.' };
   }
   if (!itemName) {
-    return { valid: false, error: 'من فضلك اكتب اسم الصنف المطلوب (مثال: شيبسي، كشري، بيبسي).' };
-  }
-  if (itemName.length > 100) {
-    return { valid: false, error: 'اسم الصنف طويل جداً (الحد الأقصى 100 حرف).' };
+    return { valid: false, error: 'من فضلك اكتب اسم الصنف المطلوب (مثال: شيبسي).' };
   }
 
   const quantity = Number(input.quantity);
@@ -385,10 +460,6 @@ export function validateOrderItemInput(input: {
   const rawCash = input.cashPaidAmount === '' ? 0 : Number(input.cashPaidAmount);
   if (!Number.isFinite(rawCash) || rawCash < 0 || rawCash > 50000) {
     return { valid: false, error: 'مبلغ الكاش غير صحيح.' };
-  }
-
-  if (notes.length > 160) {
-    return { valid: false, error: 'الملاحظات لا يجب أن تتجاوز 160 حرف.' };
   }
 
   const normalizedItemKey = normalizeArabicItemName(itemName);
@@ -411,6 +482,39 @@ export function validateOrderItemInput(input: {
       notes,
     },
   };
+}
+
+/**
+ * Authorization (تحديد الصلاحيات):
+ * Verifies that a user is only allowed to modify or delete their own orders,
+ * unless they are an authenticated Supervisor (isSupervisorUnlocked === true).
+ */
+export function canUserModifyOrder(
+  order: { deviceId?: string; roommateName?: string; roomNumber?: string } | null | undefined,
+  actor: {
+    deviceId: string;
+    name?: string;
+    room?: string;
+    isSupervisorUnlocked?: boolean;
+  }
+): boolean {
+  if (!order) return false;
+  if (actor.isSupervisorUnlocked === true) return true;
+
+  const actorDevice = (actor.deviceId || '').trim();
+  const orderDevice = (order.deviceId || '').trim();
+  if (!actorDevice || !orderDevice || actorDevice !== orderDevice) {
+    return false;
+  }
+
+  if (actor.name && order.roommateName && actor.name.trim() !== order.roommateName.trim()) {
+    return false;
+  }
+  if (actor.room && order.roomNumber && actor.room.trim() !== order.roomNumber.trim()) {
+    return false;
+  }
+
+  return true;
 }
 
 export const MASTER_PASSCODE = '0902';

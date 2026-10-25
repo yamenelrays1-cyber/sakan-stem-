@@ -24,7 +24,11 @@ import {
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+const firestoreDatabaseId = (firebaseConfig as { firestoreDatabaseId?: string })
+  .firestoreDatabaseId;
+export const db = firestoreDatabaseId
+  ? getFirestore(app, firestoreDatabaseId)
+  : getFirestore(app);
 export const auth = getAuth(app);
 
 export enum OperationType {
@@ -57,7 +61,7 @@ export function handleFirestoreError(
   error: unknown,
   operationType: OperationType,
   path: string | null
-): never {
+): void {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -67,29 +71,16 @@ export function handleFirestoreError(
       isAnonymous: auth.currentUser?.isAnonymous,
       tenantId: auth.currentUser?.tenantId,
       providerInfo:
-        auth.currentUser?.providerData?.map((provider) => ({
-          providerId: provider.providerId,
-          email: provider.email,
+        auth.currentUser?.providerData?.map((p) => ({
+          providerId: p.providerId,
+          email: p.email,
         })) || [],
     },
     operationType,
     path,
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  console.warn('Firestore sync notice:', errInfo.operationType, errInfo.path);
 }
-
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
-    }
-  }
-}
-
-testConnection();
 
 export async function signInWithGoogle(): Promise<User> {
   const provider = new GoogleAuthProvider();
