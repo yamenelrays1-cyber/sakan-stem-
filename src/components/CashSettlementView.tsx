@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { DORM_ROOMS, type RoommateFinancialSummary } from '../types/orders';
+import { type RoommateFinancialSummary } from '../types/orders';
 
 interface CashSettlementViewProps {
   roommateSummaries: RoommateFinancialSummary[];
@@ -17,6 +17,10 @@ export const CashSettlementView: React.FC<CashSettlementViewProps> = ({
   const [paymentTab, setPaymentTab] = useState<PaymentTab>('all');
   const [selectedRoom, setSelectedRoom] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  const activeRooms = Array.from(
+    new Set(roommateSummaries.map((s) => s.roomNumber).filter(Boolean))
+  );
 
   const unpaidCount = roommateSummaries.filter((s) => !s.isFullyPaid).length;
   const paidCount = roommateSummaries.filter((s) => s.isFullyPaid).length;
@@ -63,7 +67,7 @@ export const CashSettlementView: React.FC<CashSettlementViewProps> = ({
               className="h-8 px-2.5 text-xs font-bold bg-slate-50 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
             >
               <option value="all">كل الأوض ({roommateSummaries.length})</option>
-              {DORM_ROOMS.map((room) => {
+              {activeRooms.map((room) => {
                 const count = roommateSummaries.filter((s) => s.roomNumber === room).length;
                 return (
                   <option key={room} value={room}>

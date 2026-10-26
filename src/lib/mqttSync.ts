@@ -3,7 +3,7 @@ import { sanitizeTextInput } from '../utils/emailOtpService';
 
 export type MqttConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'offline';
 
-export const DEFAULT_ROOM_CODE = 'sakan-orders-2026-v4';
+export const DEFAULT_ROOM_CODE = 'sakan-orders-2026-clean-v5';
 export const MQTT_BROKER_URL = 'wss://broker.emqx.io:8084/mqtt';
 
 interface MqttClientLike {

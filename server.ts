@@ -4,7 +4,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import webpush from 'web-push';
 import type { RoommateOrderItem } from './src/types/orders.ts';
-import { INITIAL_DEMO_ORDERS } from './src/utils/seedData.ts';
 import {
   MASTER_PASSCODE,
   normalizeArabicItemName,
@@ -39,9 +38,9 @@ function loadPersistedOrders(): RoommateOrderItem[] {
       }
     }
   } catch {
-    // fallback to demo seed
+    // fallback to empty list
   }
-  return [...INITIAL_DEMO_ORDERS];
+  return [];
 }
 
 function savePersistedOrders(orders: RoommateOrderItem[]): void {

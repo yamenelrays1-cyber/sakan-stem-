@@ -1,16 +1,15 @@
-import { initializeApp } from 'firebase/app';
 import {
-  getAuth,
   GoogleAuthProvider,
   signInWithPopup,
   signOut as firebaseSignOut,
-  onAuthStateChanged,
+  onAuthStateChanged as firebaseOnAuthStateChanged,
+  type Auth,
+  type NextOrObserver,
+  type Unsubscribe,
   type User,
 } from 'firebase/auth';
 import {
-  getFirestore,
   doc,
-  getDocFromServer,
   collection,
   query,
   where,
@@ -20,16 +19,16 @@ import {
   deleteDoc,
   serverTimestamp,
   getDoc,
+  type Firestore,
 } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
 
-const app = initializeApp(firebaseConfig);
-const firestoreDatabaseId = (firebaseConfig as { firestoreDatabaseId?: string })
-  .firestoreDatabaseId;
-export const db = firestoreDatabaseId
-  ? getFirestore(app, firestoreDatabaseId)
-  : getFirestore(app);
-export const auth = getAuth(app);
+export const isFirebaseConfigured = false;
+
+const dbInstance: Firestore | null = null;
+const authInstance: Auth | null = null;
+
+export const db = dbInstance;
+export const auth = authInstance;
 
 export enum OperationType {
   CREATE = 'create',
@@ -62,16 +61,17 @@ export function handleFirestoreError(
   operationType: OperationType,
   path: string | null
 ): void {
+  const currentUser = authInstance?.currentUser;
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
+      userId: currentUser?.uid,
+      email: currentUser?.email,
+      emailVerified: currentUser?.emailVerified,
+      isAnonymous: currentUser?.isAnonymous,
+      tenantId: currentUser?.tenantId,
       providerInfo:
-        auth.currentUser?.providerData?.map((p) => ({
+        currentUser?.providerData?.map((p) => ({
           providerId: p.providerId,
           email: p.email,
         })) || [],
@@ -82,18 +82,34 @@ export function handleFirestoreError(
   console.warn('Firestore sync notice:', errInfo.operationType, errInfo.path);
 }
 
+export function onAuthStateChanged(
+  authObj: Auth | null,
+  nextOrObserver: NextOrObserver<User>
+): Unsubscribe {
+  if (!authObj) {
+    if (typeof nextOrObserver === 'function') {
+      nextOrObserver(null);
+    }
+    return () => {};
+  }
+  return firebaseOnAuthStateChanged(authObj, nextOrObserver);
+}
+
 export async function signInWithGoogle(): Promise<User> {
+  if (!authInstance) {
+    throw new Error('Firebase Auth is not configured');
+  }
   const provider = new GoogleAuthProvider();
-  const result = await signInWithPopup(auth, provider);
+  const result = await signInWithPopup(authInstance, provider);
   return result.user;
 }
 
 export async function signOutUser(): Promise<void> {
-  await firebaseSignOut(auth);
+  if (!authInstance) return;
+  await firebaseSignOut(authInstance);
 }
 
 export {
-  onAuthStateChanged,
   doc,
   collection,
   query,

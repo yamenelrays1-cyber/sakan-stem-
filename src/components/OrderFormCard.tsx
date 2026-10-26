@@ -7,9 +7,9 @@ import {
 import { validateOrderItemInput } from '../utils/orderAggregator';
 import { normalizeDormRoomInput } from '../utils/emailOtpService';
 
-export const SAVED_STUDENT_NAME_KEY = 'sakan_saved_student_name_v2';
-export const SAVED_STUDENT_ROOM_KEY = 'sakan_saved_student_room_v2';
-export const SAVED_STUDENT_EMAIL_KEY = 'sakan_saved_student_email_v2';
+export const SAVED_STUDENT_NAME_KEY = 'sakan_saved_student_name_v3';
+export const SAVED_STUDENT_ROOM_KEY = 'sakan_saved_student_room_v3';
+export const SAVED_STUDENT_EMAIL_KEY = 'sakan_saved_student_email_v3';
 
 interface OrderFormCardProps {
   formRef?: React.RefObject<HTMLFormElement | null>;
@@ -142,7 +142,8 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
   };
 
   const handleUnitPriceChange = (val: string) => {
-    setUnitPrice(val);
+    const eng = toEnglishDigits(val).replace(/[^0-9.]/g, '');
+    setUnitPrice(eng);
   };
 
   const executeOrderSubmit = async (): Promise<boolean> => {
@@ -234,28 +235,7 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
       )}
 
       <form ref={formRef} onSubmit={handleSubmit} autoComplete="off" className="mt-4 space-y-4" noValidate>
-        {/* Saved Student Identity Bar OR Editable Name + Room Fields */}
-        {hasSavedProfile && !isEditingProfileInline ? (
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
-              <span className="text-slate-500 font-medium">مسجل باسم:</span>
-              <span className="font-extrabold text-slate-900">{roommateName}</span>
-              <span className="text-slate-300" aria-hidden="true">·</span>
-              <span className="px-2.5 py-0.5 rounded-lg bg-slate-200/80 text-slate-800 font-bold text-xs">
-                {normalizedActiveRoom || roomNumber}
-              </span>
-            </div>
-
-            {savedStudentEmail && (
-              <span
-                dir="ltr"
-                className="text-xs font-mono text-slate-500 bg-white px-2.5 py-1 rounded-lg border border-slate-200"
-              >
-                {savedStudentEmail}
-              </span>
-            )}
-          </div>
-        ) : (
+        {!hasSavedProfile && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200">
             <div className="sm:col-span-2">
               <label htmlFor="roommate-name-input" className="block text-xs font-semibold text-slate-700 mb-1.5">
@@ -265,12 +245,20 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
                 ref={nameInputRef}
                 id="roommate-name-input"
                 type="text"
+                lang="ar"
+                dir="rtl"
                 required
                 disabled={isOrdersLocked}
-                placeholder="اكتب اسمك..."
+                placeholder="الاسم ثنائي"
                 value={roommateName}
                 onChange={(e) => {
-                  setRoommateName(e.target.value);
+                  const rawVal = toEnglishDigits(e.target.value);
+                  if (/[a-zA-Z0-9]/.test(rawVal)) {
+                    setRoommateName(rawVal.replace(/[a-zA-Z0-9]/g, ''));
+                    setValidationError('يرجى كتابة الاسم باللغة العربية فقط.');
+                    return;
+                  }
+                  setRoommateName(rawVal);
                   setValidationError(null);
                 }}
                 className="w-full h-11 px-3.5 text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:bg-slate-100 disabled:text-slate-400"
@@ -285,15 +273,17 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
                 id="room-number-select"
                 type="text"
                 inputMode="numeric"
+                dir="ltr"
                 required
                 disabled={isOrdersLocked}
                 placeholder="رقم الغرفة"
                 value={roomNumber}
                 onChange={(e) => {
-                  setRoomNumber(e.target.value);
+                  const engDigits = toEnglishDigits(e.target.value).replace(/[^0-9]/g, '');
+                  setRoomNumber(engDigits);
                   setValidationError(null);
                 }}
-                className="w-full h-11 px-3.5 text-sm bg-white border border-slate-300 rounded-xl text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:bg-slate-100 disabled:text-slate-400"
+                className="w-full h-11 px-3.5 text-sm font-mono tabular-nums bg-white border border-slate-300 rounded-xl text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:bg-slate-100 disabled:text-slate-400"
               />
             </div>
           </div>
@@ -311,6 +301,8 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
             id={`sakan-item-field-${inputNonce}`}
             name={`sakan_item_field_${inputNonce}`}
             type="text"
+            lang="ar"
+            dir="rtl"
             required
             autoComplete="off"
             autoCorrect="off"
@@ -323,7 +315,14 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
             placeholder="اسم الصنف"
             value={itemName}
             onChange={(e) => {
-              setItemName(e.target.value);
+              const rawVal = toEnglishDigits(e.target.value);
+              if (/[a-zA-Z]/.test(rawVal)) {
+                const stripped = rawVal.replace(/[a-zA-Z]/g, '');
+                setItemName(stripped);
+                setValidationError('يرجى كتابة الطلب باللغة العربية فقط (والأرقام بالإنجليزي).');
+                return;
+              }
+              setItemName(rawVal);
               setValidationError(null);
             }}
             className="w-full h-11 px-3.5 text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:bg-slate-100 disabled:text-slate-400"
@@ -348,12 +347,15 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
               </button>
               <input
                 id="item-quantity-input"
-                type="number"
-                min="1"
-                max="100"
+                type="text"
+                inputMode="numeric"
+                dir="ltr"
                 disabled={isOrdersLocked}
                 value={quantity}
-                onChange={(e) => handleQuantityChange(Number(e.target.value) || 1)}
+                onChange={(e) => {
+                  const eng = toEnglishDigits(e.target.value).replace(/[^0-9]/g, '');
+                  handleQuantityChange(Number(eng) || 1);
+                }}
                 className="w-full h-full text-center font-mono tabular-nums text-sm font-bold text-slate-900 focus:outline-none"
               />
               <button
@@ -374,9 +376,9 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
             </label>
             <input
               id="unit-price-input"
-              type="number"
-              min="0.5"
-              step="0.5"
+              type="text"
+              inputMode="decimal"
+              dir="ltr"
               disabled={isOrdersLocked}
               placeholder="15"
               value={unitPrice}

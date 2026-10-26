@@ -11,6 +11,8 @@ import {
   sanitizeTextInput,
   normalizeDormRoomInput,
   hasDangerousInjectionPayload,
+  toEnglishDigits,
+  isArabicOnlyStudentName,
 } from './emailOtpService.ts';
 
 /**
@@ -55,10 +57,10 @@ const CANONICAL_DISPLAY_NAMES: Record<string, string> = {
 
 /**
  * Normalizes an Arabic item name so variations in spelling (e.g. شيبسي / شبسي / شيبي)
- * produce the exact same aggregation key for the Master.
+ * produce the exact same aggregation key for the Master, with English digits (0-9).
  */
 export function normalizeArabicItemName(raw: string): string {
-  const cleaned = raw
+  const cleaned = toEnglishDigits(raw || '')
     .trim()
     .toLowerCase()
     // Remove Arabic diacritics (tashkeel) and tatweel
@@ -91,7 +93,7 @@ export function getCanonicalDisplayName(rawName: string, normalizedKey: string):
   if (words.length > 0 && words[0] === 'شيبسي') {
     return ['شيبسي', ...words.slice(1)].join(' ');
   }
-  return rawName.trim();
+  return toEnglishDigits(rawName).trim();
 }
 
 /**
@@ -389,8 +391,21 @@ export interface OrderInputValidationResult {
 }
 
 /**
- * Strictly validates form input against the schema limits in firebase-blueprint.json.
- * Requires both roommateName and roomNumber to be explicitly chosen.
+ * Checks that an order text contains Arabic letters only (with optional spaces and English digits 0-9)
+ * and zero English/Latin characters.
+ */
+export function isArabicOnlyOrderText(raw: string): boolean {
+  const trimmed = toEnglishDigits(raw || '').trim();
+  if (!trimmed) return false;
+  if (/[a-zA-Z]/.test(trimmed)) return false;
+  if (!/^[\u0600-\u06FF0-9\s،.()\-+/]+$/.test(trimmed)) return false;
+  const arabicLetters = trimmed.match(/[\u0621-\u064A]/g) || [];
+  return arabicLetters.length >= 2;
+}
+
+/**
+ * Strictly validates form input against the schema limits.
+ * Requires Arabic-only roommateName and itemName, and English digits (0-9) for all numbers.
  */
 export function validateOrderItemInput(input: {
   roommateName: string;
@@ -414,9 +429,9 @@ export function validateOrderItemInput(input: {
     };
   }
 
-  const rawName = (input.roommateName || '').trim();
-  const rawItem = (input.itemName || '').trim();
-  const rawNotes = (input.notes || '').trim();
+  const rawName = toEnglishDigits(input.roommateName || '').trim();
+  const rawItem = toEnglishDigits(input.itemName || '').trim();
+  const rawNotes = toEnglishDigits(input.notes || '').trim();
 
   if (rawName.length > 60) {
     return { valid: false, error: 'الاسم طويل جداً (الحد الأقصى 60 حرف).' };
@@ -429,42 +444,52 @@ export function validateOrderItemInput(input: {
   }
 
   const roommateName = sanitizeTextInput(rawName, 60);
-  const rawRoomTrimmed = (input.roomNumber || '').trim();
+  const rawRoomTrimmed = toEnglishDigits(input.roomNumber || '').trim();
   const roomNumber = normalizeDormRoomInput(rawRoomTrimmed);
   const itemName = sanitizeTextInput(rawItem, 100);
   const notes = sanitizeTextInput(rawNotes, 160);
 
   if (!roommateName || roommateName.length < 2) {
-    return { valid: false, error: 'من فضلك اكتب اسمك الأول علشان المشرف يعرف الطلب بتاع مين.' };
+    return { valid: false, error: 'من فضلك اكتب اسمك الأول باللغة العربية علشان المشرف يعرف الطلب بتاع مين.' };
+  }
+  if (!isArabicOnlyStudentName(roommateName)) {
+    return { valid: false, error: 'يرجى كتابة الاسم باللغة العربية فقط.' };
   }
   if (!rawRoomTrimmed) {
-    return { valid: false, error: 'من فضلك اكتب رقم الغرفة الأول.' };
+    return { valid: false, error: 'من فضلك اكتب رقم الغرفة بالأرقام الإنجليزي.' };
   }
   if (!roomNumber) {
-    return { valid: false, error: 'من فضلك اكتب رقم الغرفة بشكل صحيح.' };
+    return { valid: false, error: 'من فضلك اكتب رقم الغرفة بالأرقام الإنجليزي فقط.' };
   }
   if (!itemName) {
-    return { valid: false, error: 'من فضلك اكتب اسم الصنف المطلوب (مثال: شيبسي).' };
+    return { valid: false, error: 'من فضلك اكتب اسم الصنف المطلوب باللغة العربية.' };
+  }
+  if (!isArabicOnlyOrderText(itemName)) {
+    return { valid: false, error: 'يرجى كتابة الطلب باللغة العربية فقط.' };
+  }
+  if (notes && !isArabicOnlyOrderText(notes)) {
+    return { valid: false, error: 'يرجى كتابة الملاحظات باللغة العربية فقط.' };
   }
 
-  const quantity = Number(input.quantity);
+  const quantity = Number(toEnglishDigits(String(input.quantity)));
   if (!Number.isFinite(quantity) || quantity < 1 || quantity > 100 || !Number.isInteger(quantity)) {
     return { valid: false, error: 'الكمية لازم تكون رقم صحيح من 1 لـ 100.' };
   }
 
-  const unitPrice = Number(input.unitPrice);
+  const unitPrice = Number(toEnglishDigits(String(input.unitPrice)));
   if (!Number.isFinite(unitPrice) || unitPrice <= 0 || unitPrice > 10000) {
-    return { valid: false, error: 'من فضلك اكتب سعر الوحدة بشكل صحيح (أكبر من صفر).' };
+    return { valid: false, error: 'من فضلك اكتب سعر الوحدة بالأرقام الإنجليزي (أكبر من صفر).' };
   }
 
-  const rawCash = input.cashPaidAmount === '' ? 0 : Number(input.cashPaidAmount);
+  const rawCash =
+    input.cashPaidAmount === '' ? 0 : Number(toEnglishDigits(String(input.cashPaidAmount)));
   if (!Number.isFinite(rawCash) || rawCash < 0 || rawCash > 50000) {
     return { valid: false, error: 'مبلغ الكاش غير صحيح.' };
   }
 
   const normalizedItemKey = normalizeArabicItemName(itemName);
   if (!normalizedItemKey) {
-    return { valid: false, error: 'من فضلك اكتب اسم صنف واضح.' };
+    return { valid: false, error: 'من فضلك اكتب اسم صنف واضح باللغة العربية.' };
   }
 
   return {
@@ -520,7 +545,7 @@ export function canUserModifyOrder(
 export const MASTER_PASSCODE = '0902';
 
 export function verifyMasterPasscode(input: string): boolean {
-  return input.trim() === MASTER_PASSCODE;
+  return toEnglishDigits(input || '').trim() === MASTER_PASSCODE;
 }
 
 export type MasterPaymentFilter = 'all' | 'unpaid' | 'paid' | 'cash' | 'vodafone_cash';

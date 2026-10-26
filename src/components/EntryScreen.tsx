@@ -17,6 +17,7 @@ import {
   MAX_AUTH_ATTEMPTS,
   sanitizeTextInput,
   normalizeDormRoomInput,
+  toEnglishDigits,
   validateEmailInput,
   validatePasswordInput,
   validateStudentProfileInput,
@@ -27,10 +28,11 @@ import {
   type RegisteredStudentAccountRecord,
 } from '../utils/emailOtpService';
 
-export const REGISTERED_ACCOUNTS_KEY = 'sakan_registered_student_accounts_v3';
+export const REGISTERED_ACCOUNTS_KEY = 'sakan_registered_student_accounts_v4';
 const LEGACY_REGISTERED_ACCOUNTS_V1 = 'sakan_registered_student_accounts_v1';
 const LEGACY_REGISTERED_ACCOUNTS_V2 = 'sakan_registered_student_accounts_v2';
-export const VERIFIED_SESSION_STORAGE_KEY = 'sakan_verified_session_v8';
+const LEGACY_REGISTERED_ACCOUNTS_V3 = 'sakan_registered_student_accounts_v3';
+export const VERIFIED_SESSION_STORAGE_KEY = 'sakan_verified_session_v9';
 
 // Secrets (5): Strictly load EmailJS credentials from import.meta.env only
 const EMAILJS_SERVICE_ID =
@@ -109,6 +111,8 @@ export function loadRegisteredAccounts(): Record<string, StoredStudentAccount> {
   if (typeof window === 'undefined') return {};
   try {
     localStorage.removeItem(LEGACY_REGISTERED_ACCOUNTS_V1);
+    localStorage.removeItem(LEGACY_REGISTERED_ACCOUNTS_V2);
+    localStorage.removeItem(LEGACY_REGISTERED_ACCOUNTS_V3);
     const raw = localStorage.getItem(REGISTERED_ACCOUNTS_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
@@ -203,20 +207,17 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   onSaveStudentProfileAndEnter,
   onEnterEdition,
 }) => {
-  // Default to 'login' if an account already exists in localStorage, otherwise 'login' with easy switch to 'signup'
+  // Default to 'login' if an account already exists in localStorage, otherwise 'signup'
   const [step, setStep] = useState<AuthViewStep>(() => {
-    if (initialEmail && initialEmail.trim()) return 'login';
     return hasAnyRegisteredAccount() ? 'login' : 'signup';
   });
 
-  const [email, setEmail] = useState<string>(() => sanitizeTextInput(initialEmail, 120));
+  const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [newPassword, setNewPassword] = useState<string>('');
   const [confirmNewPassword, setConfirmNewPassword] = useState<string>('');
-  const [name, setName] = useState<string>(() => sanitizeTextInput(initialName, 60));
-  const [room, setRoom] = useState<string>(() =>
-    initialRoom ? String(initialRoom).replace(/^غرفة\s+/, '') : ''
-  );
+  const [name, setName] = useState<string>('');
+  const [room, setRoom] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
 
@@ -1100,13 +1101,21 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
                           id="entry-signup-name"
                           aria-label="الاسم ثنائي (Full Name)"
                           type="text"
+                          lang="ar"
+                          dir="rtl"
                           required
                           disabled={isSendingOtp || authLockoutSeconds > 0}
                           tabIndex={isLitAndRaised ? 0 : -1}
                           placeholder="الاسم ثنائي"
                           value={name}
                           onChange={(e) => {
-                            setName(e.target.value);
+                            const rawVal = toEnglishDigits(e.target.value);
+                            if (/[a-zA-Z0-9]/.test(rawVal)) {
+                              setName(rawVal.replace(/[a-zA-Z0-9]/g, ''));
+                              setError('يرجى كتابة الاسم باللغة العربية فقط.');
+                              return;
+                            }
+                            setName(rawVal);
                             setError(null);
                           }}
                           className="w-full h-11 px-4 text-sm bg-[#3a3a3a]/85 border border-white/15 rounded-xl text-white placeholder-neutral-400 focus:outline-none focus:border-[#ffd24c] focus:ring-1 focus:ring-[#ffd24c]/50 disabled:opacity-60"
@@ -1119,16 +1128,18 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
                           aria-label="رقم الغرفة (Room Number)"
                           type="text"
                           inputMode="numeric"
+                          dir="ltr"
                           required
                           disabled={isSendingOtp || authLockoutSeconds > 0}
                           tabIndex={isLitAndRaised ? 0 : -1}
                           placeholder="رقم الغرفة"
                           value={room}
                           onChange={(e) => {
-                            setRoom(e.target.value);
+                            const engDigits = toEnglishDigits(e.target.value).replace(/[^0-9]/g, '');
+                            setRoom(engDigits);
                             setError(null);
                           }}
-                          className="w-full h-11 px-4 text-sm bg-[#3a3a3a]/85 border border-white/15 rounded-xl text-white placeholder-neutral-400 focus:outline-none focus:border-[#ffd24c] focus:ring-1 focus:ring-[#ffd24c]/50 disabled:opacity-60"
+                          className="w-full h-11 px-4 text-sm font-mono tabular-nums text-right bg-[#3a3a3a]/85 border border-white/15 rounded-xl text-white placeholder-neutral-400 focus:outline-none focus:border-[#ffd24c] focus:ring-1 focus:ring-[#ffd24c]/50 disabled:opacity-60"
                         />
                       </div>
 

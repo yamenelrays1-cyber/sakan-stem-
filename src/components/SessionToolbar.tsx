@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { SessionFinancialSummary } from '../types/orders';
 import type { User } from '../lib/firebase';
+import { toEnglishDigits } from '../utils/emailOtpService';
 
 interface SessionToolbarProps {
   financials: SessionFinancialSummary;
@@ -37,7 +38,7 @@ export const SessionToolbar: React.FC<SessionToolbarProps> = ({
 
   const handleToggleDelivery = () => {
     const nextEnabled = !isDeliveryEnabled;
-    const parsed = Number(feeInput);
+    const parsed = Number(toEnglishDigits(feeInput));
     const validFee =
       Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 100) / 100 : deliveryFee > 0 ? deliveryFee : 5;
     setFeeInput(String(validFee));
@@ -45,8 +46,9 @@ export const SessionToolbar: React.FC<SessionToolbarProps> = ({
   };
 
   const handleFeeInputChange = (val: string) => {
-    setFeeInput(val);
-    const parsed = Number(val);
+    const eng = toEnglishDigits(val).replace(/[^0-9.]/g, '');
+    setFeeInput(eng);
+    const parsed = Number(eng);
     if (Number.isFinite(parsed) && parsed >= 0) {
       onUpdateDeliverySettings(isDeliveryEnabled, Math.round(parsed * 100) / 100);
     }

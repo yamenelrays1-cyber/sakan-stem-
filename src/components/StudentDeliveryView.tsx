@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { DORM_ROOMS, type RoommateFinancialSummary } from '../types/orders';
+import { type RoommateFinancialSummary } from '../types/orders';
 
 interface StudentDeliveryViewProps {
   roommateSummaries: RoommateFinancialSummary[];
@@ -18,6 +18,10 @@ export const StudentDeliveryView: React.FC<StudentDeliveryViewProps> = ({
   const [deliveryTab, setDeliveryTab] = useState<DeliveryTab>('all');
   const [selectedRoom, setSelectedRoom] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  const activeRooms = Array.from(
+    new Set(roommateSummaries.map((s) => s.roomNumber).filter(Boolean))
+  );
 
   const totalStudents = roommateSummaries.length;
   const deliveredStudentsCount = roommateSummaries.filter((s) => s.isDelivered).length;
@@ -61,7 +65,7 @@ export const StudentDeliveryView: React.FC<StudentDeliveryViewProps> = ({
               className="h-8 px-2.5 text-xs font-bold bg-slate-50 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
             >
               <option value="all">كل الأوض ({totalStudents})</option>
-              {DORM_ROOMS.map((room) => {
+              {activeRooms.map((room) => {
                 const count = roommateSummaries.filter((s) => s.roomNumber === room).length;
                 return (
                   <option key={room} value={room}>

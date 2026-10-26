@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { DORM_ROOMS, type MasterAggregatedItem } from '../types/orders';
+import { type MasterAggregatedItem } from '../types/orders';
 
 interface MasterAggregatedViewProps {
   aggregatedItems: MasterAggregatedItem[];
@@ -15,6 +15,14 @@ export const MasterAggregatedView: React.FC<MasterAggregatedViewProps> = ({
   const [storeFilter, setStoreFilter] = useState<StoreFilter>('all');
   const [selectedRoom, setSelectedRoom] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  const activeRooms = Array.from(
+    new Set(
+      aggregatedItems.flatMap((item) =>
+        (item.requesters || []).map((r) => r.roomNumber).filter(Boolean)
+      )
+    )
+  );
 
   const unpurchasedCount = aggregatedItems.filter((item) => !item.allPurchased).length;
   const purchasedCount = aggregatedItems.filter((item) => item.allPurchased).length;
@@ -109,7 +117,7 @@ export const MasterAggregatedView: React.FC<MasterAggregatedViewProps> = ({
               className="h-8 px-2.5 text-xs font-bold bg-slate-50 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
             >
               <option value="all">كل الأوض</option>
-              {DORM_ROOMS.map((room) => (
+              {activeRooms.map((room) => (
                 <option key={room} value={room}>
                   {room}
                 </option>

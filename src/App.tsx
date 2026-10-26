@@ -37,7 +37,6 @@ import { StudentDeliveryView } from './components/StudentDeliveryView';
 import { PWAInstallModal } from './components/PWAInstallModal';
 import { EntryScreen, VERIFIED_SESSION_STORAGE_KEY } from './components/EntryScreen';
 import { Footer } from './components/Footer';
-import { AnimeLoadingScreenDemo } from './components/InteractiveShowcase';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import { SakanMqttSync, DEFAULT_ROOM_CODE } from './lib/mqttSync';
 import {
@@ -117,15 +116,21 @@ function getOrCreatePhoneDeviceId(): string {
   }
 }
 
-const STANDALONE_LOGIN_DONE_KEY = 'sakan_standalone_login_completed_v8';
-const BROWSER_LOGIN_DONE_KEY = 'sakan_browser_login_completed_v8';
+const STANDALONE_LOGIN_DONE_KEY = 'sakan_standalone_login_completed_v9';
+const BROWSER_LOGIN_DONE_KEY = 'sakan_browser_login_completed_v9';
 
 // One-time cleanup of legacy student profile keys and unverified login flags
 if (typeof window !== 'undefined') {
   try {
     localStorage.removeItem('sakan_saved_student_name_v1');
     localStorage.removeItem('sakan_saved_student_room_v1');
+    localStorage.removeItem('sakan_saved_student_name_v2');
+    localStorage.removeItem('sakan_saved_student_room_v2');
+    localStorage.removeItem('sakan_saved_student_email_v2');
     localStorage.removeItem('sakan_registered_student_accounts_v1');
+    localStorage.removeItem('sakan_registered_student_accounts_v2');
+    localStorage.removeItem('sakan_registered_student_accounts_v3');
+    localStorage.removeItem('sakan_verified_session_v8');
     localStorage.removeItem('sakan_standalone_login_completed_v3');
     localStorage.removeItem('sakan_browser_login_completed_v3');
     localStorage.removeItem('sakan_standalone_login_completed_v4');
@@ -136,6 +141,8 @@ if (typeof window !== 'undefined') {
     localStorage.removeItem('sakan_browser_login_completed_v6');
     localStorage.removeItem('sakan_standalone_login_completed_v7');
     localStorage.removeItem('sakan_browser_login_completed_v7');
+    localStorage.removeItem('sakan_standalone_login_completed_v8');
+    localStorage.removeItem('sakan_browser_login_completed_v8');
   } catch {
     // ignore
   }
@@ -285,20 +292,6 @@ export default function App() {
       document.body.style.color = theme === 'dark' ? '#f8fafc' : '#0f172a';
     }
   }, [theme]);
-
-  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(() => {
-    if (getInitialEditionFromUrl() === 'master') return false;
-    if (hasCompletedFirstLogin()) return false;
-    return true;
-  });
-
-  useEffect(() => {
-    if (!isInitialLoading) return;
-    const t = window.setTimeout(() => {
-      setIsInitialLoading(false);
-    }, 3200);
-    return () => window.clearTimeout(t);
-  }, [isInitialLoading]);
 
   const { isInstallable, isInstalled, install } = usePWAInstall();
   const nameInputRef = useRef<HTMLInputElement | null>(null);
@@ -690,9 +683,15 @@ export default function App() {
       localStorage.removeItem(STANDALONE_LOGIN_DONE_KEY);
       localStorage.removeItem(BROWSER_LOGIN_DONE_KEY);
       localStorage.removeItem(VERIFIED_SESSION_STORAGE_KEY);
+      localStorage.removeItem(SAVED_STUDENT_NAME_KEY);
+      localStorage.removeItem(SAVED_STUDENT_ROOM_KEY);
+      localStorage.removeItem(SAVED_STUDENT_EMAIL_KEY);
     } catch {
       // ignore
     }
+    setSavedStudentName('');
+    setSavedStudentRoom('');
+    setSavedStudentEmail('');
     setIsMasterUnlocked(false);
     setPasscodeInput('');
     setPasscodeError(null);
@@ -989,7 +988,7 @@ export default function App() {
       // ignore network error
     }
 
-    if (currentUser) {
+    if (currentUser && db) {
       const orderRef = doc(db, 'sessions', DEFAULT_ROOM_CODE, 'orders', newId);
       try {
         await setDoc(orderRef, {
@@ -1267,7 +1266,7 @@ export default function App() {
       );
     }
 
-    if (currentUser) {
+    if (currentUser && db) {
       const orderRef = doc(db, 'sessions', DEFAULT_ROOM_CODE, 'orders', orderId);
       try {
         await deleteDoc(orderRef);
@@ -1403,14 +1402,6 @@ export default function App() {
     await signOutUser();
     setStatusBanner('تم تسجيل الخروج.');
   };
-
-  if (isInitialLoading) {
-    return (
-      <div className="relative min-h-screen bg-black">
-        <AnimeLoadingScreenDemo />
-      </div>
-    );
-  }
 
   return (
     <div
@@ -1820,13 +1811,13 @@ export default function App() {
                             <div className="flex items-center gap-2">
                               <input
                                 id="student-total-prepared-cash"
-                                type="number"
-                                min={myTotalRequired}
-                                step="1"
-                                placeholder={`اكتب المبلغ اللي هتجهزه (مثال: ${myTotalRequired})...`}
+                                type="text"
+                                inputMode="decimal"
+                                dir="ltr"
+                                placeholder="اكتب المبلغ..."
                                 value={studentPreparedInput}
                                 onChange={(e) => {
-                                  const raw = e.target.value;
+                                  const raw = toEnglishDigits(e.target.value).replace(/[^0-9.]/g, '');
                                   setStudentPreparedInput(raw);
                                   setStudentOrderSubmittedMsg(null);
                                   const num = Number(raw);
@@ -1839,7 +1830,7 @@ export default function App() {
                                   }
                                 }}
                                 onBlur={() => {
-                                  const num = Number(studentPreparedInput);
+                                  const num = Number(toEnglishDigits(studentPreparedInput));
                                   const validCash =
                                     Number.isFinite(num) && num >= myTotalRequired
                                       ? num
@@ -1883,7 +1874,7 @@ export default function App() {
                             id="submit-student-orders-btn"
                             type="button"
                             onClick={async () => {
-                              const num = Number(studentPreparedInput);
+                              const num = Number(toEnglishDigits(studentPreparedInput));
                               const validCash =
                                 myCurrentPaymentMethod === 'cash'
                                   ? Number.isFinite(num) && num >= myTotalRequired
@@ -1947,10 +1938,12 @@ export default function App() {
                     id="master-passcode-input"
                     type="password"
                     inputMode="numeric"
+                    dir="ltr"
                     placeholder="اكتب الباسورد..."
                     value={passcodeInput}
                     onChange={(e) => {
-                      setPasscodeInput(e.target.value);
+                      const engDigits = toEnglishDigits(e.target.value).replace(/[^0-9]/g, '');
+                      setPasscodeInput(engDigits);
                       setPasscodeError(null);
                     }}
                     className="w-full h-11 px-3.5 text-center font-mono tabular-nums text-base bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900"

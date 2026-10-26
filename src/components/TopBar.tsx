@@ -126,7 +126,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             <div dir="ltr" className="shrink-0">
               <AnimatedLogoutButton
                 variant={isDark ? 'dark' : 'light'}
-                initialLabel="Log Out"
+                initialLabel="تسجيل الخروج"
                 compact
                 onLogoutComplete={onLogout}
               />

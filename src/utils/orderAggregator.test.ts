@@ -175,14 +175,14 @@ test('verifyMasterPasscode accepts only 0902', async () => {
 
 test('MQTT topic helpers format sakan_app/{roomCode}/orders/{orderId} and wildcard correctly', async () => {
   const { getOrderTopic, getOrdersWildcardTopic, DEFAULT_ROOM_CODE } = await import('../lib/mqttSync.ts');
-  assert.equal(DEFAULT_ROOM_CODE, 'sakan-orders-2026-v4');
+  assert.equal(DEFAULT_ROOM_CODE, 'sakan-orders-2026-clean-v5');
   assert.equal(
-    getOrderTopic('sakan-orders-2026-v4', 'ord_123'),
-    'sakan_app/sakan-orders-2026-v4/orders/ord_123'
+    getOrderTopic('sakan-orders-2026-clean-v5', 'ord_123'),
+    'sakan_app/sakan-orders-2026-clean-v5/orders/ord_123'
   );
   assert.equal(
-    getOrdersWildcardTopic('sakan-orders-2026-v4'),
-    'sakan_app/sakan-orders-2026-v4/orders/+'
+    getOrdersWildcardTopic('sakan-orders-2026-clean-v5'),
+    'sakan_app/sakan-orders-2026-clean-v5/orders/+'
   );
 });
 
@@ -412,5 +412,50 @@ test('validateOrderItemInput blocks XSS/SQLi injection attempts in name or item 
   });
   assert.equal(xssAttempt.valid, false);
 });
+
+test('validateOrderItemInput rejects English or non-Arabic order item names and accepts Arabic-only items', () => {
+  const englishOrder = validateOrderItemInput({
+    roommateName: 'أحمد محمد',
+    roomNumber: '404',
+    itemName: 'Chipsy',
+    category: 'snacks',
+    quantity: 1,
+    unitPrice: 15,
+    paymentMethod: 'cash',
+    cashPaidAmount: 15,
+    notes: '',
+  });
+  assert.equal(englishOrder.valid, false);
+  assert.equal(englishOrder.error, 'يرجى كتابة الطلب باللغة العربية فقط.');
+
+  const mixedEnglishOrder = validateOrderItemInput({
+    roommateName: 'أحمد محمد',
+    roomNumber: '404',
+    itemName: 'شيبسي Jumbo',
+    category: 'snacks',
+    quantity: 1,
+    unitPrice: 15,
+    paymentMethod: 'cash',
+    cashPaidAmount: 15,
+    notes: '',
+  });
+  assert.equal(mixedEnglishOrder.valid, false);
+  assert.equal(mixedEnglishOrder.error, 'يرجى كتابة الطلب باللغة العربية فقط.');
+
+  const arabicOrder = validateOrderItemInput({
+    roommateName: 'أحمد محمد',
+    roomNumber: '404',
+    itemName: 'شيبسي عائلي',
+    category: 'snacks',
+    quantity: 2,
+    unitPrice: 15,
+    paymentMethod: 'cash',
+    cashPaidAmount: 30,
+    notes: '',
+  });
+  assert.equal(arabicOrder.valid, true);
+  assert.equal(arabicOrder.sanitized?.itemName, 'شيبسي عائلي');
+});
+
 
 

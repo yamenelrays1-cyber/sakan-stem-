@@ -139,9 +139,32 @@ export function formatEmailJsError(err: unknown): FormattedEmailJsError {
  * Injection Protection (XSS & SQLi):
  * Strips HTML tags, script blocks, event handlers, dangerous protocols, and SQL injection tokens.
  */
+/**
+ * Converts any Eastern Arabic numerals (٠-٩) or Extended Arabic-Indic numerals (۰-۹)
+ * into standard English digits (0-9).
+ */
+export function toEnglishDigits(raw: string): string {
+  if (typeof raw !== 'string') return '';
+  return raw
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
+}
+
+/**
+ * Checks that a student name contains Arabic letters and spaces only (no English letters or numbers).
+ */
+export function isArabicOnlyStudentName(raw: string): boolean {
+  const trimmed = toEnglishDigits(raw || '').trim();
+  if (!trimmed) return false;
+  if (/[a-zA-Z0-9]/.test(trimmed)) return false;
+  if (!/^[\u0600-\u06FF\s]+$/.test(trimmed)) return false;
+  const arabicLetters = trimmed.match(/[\u0621-\u064A]/g) || [];
+  return arabicLetters.length >= 2;
+}
+
 export function sanitizeTextInput(raw: string, maxLength: number = 160): string {
   if (typeof raw !== 'string') return '';
-  const cleaned = raw
+  const cleaned = toEnglishDigits(raw)
     // Remove <script> and <style> blocks completely
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
@@ -178,7 +201,7 @@ export function validateEmailInput(rawEmail: string): {
   sanitized: string;
   errorAr?: string;
 } {
-  const trimmed = (rawEmail || '').trim();
+  const trimmed = toEnglishDigits(rawEmail || '').trim();
   if (!trimmed) {
     return {
       valid: false,
@@ -205,7 +228,7 @@ export function validateEmailInput(rawEmail: string): {
     return {
       valid: false,
       sanitized: '',
-      errorAr: 'من فضلك اكتب حساب بريد إلكتروني صحيح (مثال: example@gmail.com).',
+      errorAr: 'من فضلك اكتب حساب بريد إلكتروني صحيح.',
     };
   }
   return {
@@ -221,7 +244,7 @@ export function validatePasswordInput(rawPassword: string): {
   valid: boolean;
   errorAr?: string;
 } {
-  const trimmed = (rawPassword || '').trim();
+  const trimmed = toEnglishDigits(rawPassword || '').trim();
   if (!trimmed) {
     return {
       valid: false,
@@ -251,29 +274,28 @@ export function validatePasswordInput(rawPassword: string): {
 
 /**
  * Normalizes a user-typed room input (e.g., "404", "٤٠٥", "غرفة 404", "302")
- * into canonical "غرفة <number>" format, or returns "" if empty/invalid.
+ * into canonical "غرفة <number>" format with English digits (0-9), or returns "" if empty/invalid.
  */
 export function normalizeDormRoomInput(rawRoom: string): string {
   if (!rawRoom || typeof rawRoom !== 'string') return '';
   if (hasDangerousInjectionPayload(rawRoom)) return '';
 
-  // Convert Arabic-Indic (٠-٩) and Eastern Arabic (۰-۹) digits to ASCII (0-9)
-  const asciiDigits = rawRoom
-    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
-    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
-
+  const asciiDigits = toEnglishDigits(rawRoom);
   const cleaned = sanitizeTextInput(asciiDigits, 24).trim();
   if (!cleaned) return '';
 
-  // Strip optional leading room words ("غرفة", "غرفه", "أوضة", "اوضة", "room", "#")
+  // Strip optional leading room words ("غرفة", "غرفه", "أوضة", "اوضة", "#")
   const withoutPrefix = cleaned
-    .replace(/^(?:غرف[ةه]|أوض[ةه]|اوض[ةه]|room|#)\s*[:\-]?\s*/i, '')
+    .replace(/^(?:غرف[ةه]|أوض[ةه]|اوض[ةه]|#)\s*[:\-]?\s*/i, '')
     .trim();
 
   if (!withoutPrefix) return '';
 
-  // Require a positive room number (1-5 digits, optionally followed by a short floor/wing letter)
-  if (!/^[0-9]{1,5}(?:[\-\s]?[A-Za-z\u0621-\u064A]{1,4})?$/.test(withoutPrefix)) {
+  // Reject any English letters in room numbers; require English digits 0-9 (optionally followed by an Arabic letter)
+  if (/[a-zA-Z]/.test(withoutPrefix)) {
+    return '';
+  }
+  if (!/^[0-9]{1,5}(?:[\-\s]?[\u0621-\u064A]{1,4})?$/.test(withoutPrefix)) {
     return '';
   }
 
@@ -286,7 +308,7 @@ export function normalizeDormRoomInput(rawRoom: string): string {
 }
 
 /**
- * Validates and sanitizes Student Name and user-typed Dorm Room.
+ * Validates and sanitizes Student Name (Arabic only) and user-typed Dorm Room (English digits).
  */
 export function validateStudentProfileInput(
   rawName: string,
@@ -307,16 +329,32 @@ export function validateStudentProfileInput(
     };
   }
   const sanitizedName = sanitizeTextInput(rawName, 60);
-  const nameWords = sanitizedName
-    .trim()
-    .split(/\s+/)
-    .filter((w) => w.length >= 2);
-  if (!sanitizedName || nameWords.length < 2) {
+  if (!sanitizedName) {
     return {
       valid: false,
       sanitizedName: '',
       sanitizedRoom: '',
-      errorAr: 'من فضلك اكتب الاسم ثنائي على الأقل.',
+      errorAr: 'من فضلك اكتب الاسم ثنائي باللغة العربية.',
+    };
+  }
+  if (!isArabicOnlyStudentName(sanitizedName)) {
+    return {
+      valid: false,
+      sanitizedName: '',
+      sanitizedRoom: '',
+      errorAr: 'يرجى كتابة الاسم باللغة العربية فقط.',
+    };
+  }
+  const nameWords = sanitizedName
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length >= 2);
+  if (nameWords.length < 2) {
+    return {
+      valid: false,
+      sanitizedName: '',
+      sanitizedRoom: '',
+      errorAr: 'من فضلك اكتب الاسم ثنائي على الأقل باللغة العربية.',
     };
   }
 
@@ -326,7 +364,7 @@ export function validateStudentProfileInput(
       valid: false,
       sanitizedName,
       sanitizedRoom: '',
-      errorAr: 'من فضلك اكتب رقم الغرفة.',
+      errorAr: 'من فضلك اكتب رقم الغرفة بالأرقام الإنجليزي.',
     };
   }
 
@@ -336,7 +374,7 @@ export function validateStudentProfileInput(
       valid: false,
       sanitizedName,
       sanitizedRoom: '',
-      errorAr: 'من فضلك اكتب رقم الغرفة بشكل صحيح.',
+      errorAr: 'من فضلك اكتب رقم الغرفة بالأرقام الإنجليزي فقط.',
     };
   }
 
@@ -345,7 +383,7 @@ export function validateStudentProfileInput(
       valid: false,
       sanitizedName,
       sanitizedRoom: '',
-      errorAr: 'من فضلك اكتب رقم الغرفة بشكل صحيح.',
+      errorAr: 'من فضلك اكتب رقم الغرفة بالأرقام الإنجليزي فقط.',
     };
   }
 
@@ -366,7 +404,8 @@ export function validateOtpCodeInput(
   expiresAt?: number,
   nowMs: number = Date.now()
 ): { valid: boolean; expired?: boolean; errorAr?: string } {
-  const clean = (inputCode || '').trim();
+  const clean = toEnglishDigits(inputCode || '').trim();
+  const cleanExpected = expectedCode ? toEnglishDigits(expectedCode).trim() : undefined;
   if (!/^\d{4}$/.test(clean)) {
     return {
       valid: false,
@@ -385,9 +424,9 @@ export function validateOtpCodeInput(
 
   if (
     enforceExpectedMatch &&
-    expectedCode &&
-    /^\d{4}$/.test(expectedCode) &&
-    clean !== expectedCode
+    cleanExpected &&
+    /^\d{4}$/.test(cleanExpected) &&
+    clean !== cleanExpected
   ) {
     return {
       valid: false,

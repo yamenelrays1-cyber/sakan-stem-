@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   validateOtpCodeInput,
+  toEnglishDigits,
   OTP_EXPIRY_MS,
   OTP_RESEND_COOLDOWN_SECONDS,
   MAX_AUTH_ATTEMPTS,
@@ -416,7 +417,7 @@ export const OtpVerificationCardDemo: React.FC<{
 
   const handleChange = (index: number, rawVal: string) => {
     if (isLockedOut) return;
-    const clean = rawVal.replace(/\D/g, '').slice(-1);
+    const clean = toEnglishDigits(rawVal).replace(/\D/g, '').slice(-1);
     const next = [...digits];
     next[index] = clean;
     setDigits(next);
@@ -449,7 +450,7 @@ export const OtpVerificationCardDemo: React.FC<{
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault();
     if (isLockedOut) return;
-    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 4);
+    const pasted = toEnglishDigits(e.clipboardData.getData('text')).replace(/\D/g, '').slice(0, 4);
     if (!pasted) return;
     const next = ['', '', '', ''];
     pasted.split('').forEach((ch, idx) => {
@@ -537,8 +538,8 @@ export const OtpVerificationCardDemo: React.FC<{
         </div>
 
         {/* Heading */}
-        <h2 className="text-2xl font-extrabold text-white mb-1.5 tracking-tight">
-          Verification Code
+        <h2 dir="rtl" className="text-2xl font-extrabold text-white mb-1.5 tracking-tight">
+          كود التحقق
         </h2>
 
         {!isVerified ? (
@@ -585,7 +586,7 @@ export const OtpVerificationCardDemo: React.FC<{
                   onChange={(e) => handleChange(idx, e.target.value)}
                   onKeyDown={(e) => handleKeyDown(idx, e)}
                   onPaste={handlePaste}
-                  className={`w-[56px] h-[60px] rounded-2xl border-2 text-center text-2xl font-extrabold text-blue-400 outline-none transition-all disabled:opacity-45 disabled:cursor-not-allowed ${
+                  className={`w-[56px] h-[60px] rounded-2xl border-2 text-center font-mono tabular-nums text-2xl font-extrabold text-blue-400 outline-none transition-all disabled:opacity-45 disabled:cursor-not-allowed ${
                     digit
                       ? 'border-blue-400 bg-blue-500/15 shadow-[0_0_15px_rgba(59,130,246,0.25)]'
                       : 'border-slate-700 bg-slate-900/90'
@@ -622,7 +623,7 @@ export const OtpVerificationCardDemo: React.FC<{
               >
                 {isLockedOut
                   ? `مغلق مؤقتاً (${lockoutRemainingSeconds} ث)`
-                  : 'Verify Code / تأكيد الكود'}
+                  : 'تأكيد الكود'}
               </button>
 
               <button
@@ -641,11 +642,11 @@ export const OtpVerificationCardDemo: React.FC<{
                     <span>جاري إعادة الإرسال...</span>
                   </>
                 ) : resendFeedback ? (
-                  'Code Resent ✓'
+                  'تم إعادة إرسال الكود ✓'
                 ) : resendCooldown > 0 ? (
-                  `Resend OTP (${resendCooldown}s) · إعادة الإرسال بعد ${resendCooldown} ث`
+                  `إعادة الإرسال بعد ${resendCooldown} ث`
                 ) : (
-                  'Resend OTP / إعادة إرسال الكود'
+                  'إعادة إرسال الكود'
                 )}
               </button>
             </div>
@@ -657,7 +658,7 @@ export const OtpVerificationCardDemo: React.FC<{
             transition={{ duration: 0.4, ease: 'easeOut' }}
             className="space-y-5"
           >
-            <p className="text-sm text-slate-300">Your number has been verified.</p>
+            <p dir="rtl" className="text-sm text-slate-300">تم التحقق من الكود بنجاح.</p>
 
             {/* Small Animated Green Check in the Middle */}
             <motion.div
@@ -680,8 +681,8 @@ export const OtpVerificationCardDemo: React.FC<{
             </motion.div>
 
             <div className="pt-1">
-              <span className="inline-block text-sm font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-400/30 px-4 py-2 rounded-full">
-                Verified and secure
+              <span dir="rtl" className="inline-block text-sm font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-400/30 px-4 py-2 rounded-full">
+                تم التأكيد بنجاح
               </span>
             </div>
           </motion.div>
@@ -908,7 +909,7 @@ export const AnimatedLogoutButton: React.FC<{
   initialLabel?: string;
   compact?: boolean;
   onLogoutComplete?: () => void;
-}> = ({ variant, initialLabel = 'Log Out', compact = false, onLogoutComplete }) => {
+}> = ({ variant, initialLabel = 'تسجيل الخروج', compact = false, onLogoutComplete }) => {
   const [status, setStatus] = useState<'idle' | 'logging-out' | 'logged-out'>('idle');
   const [isHovered, setIsHovered] = useState<boolean>(false);
 
@@ -930,9 +931,9 @@ export const AnimatedLogoutButton: React.FC<{
 
   const labelText =
     status === 'logging-out'
-      ? 'Logging out…'
+      ? 'جاري الخروج...'
       : status === 'logged-out'
-        ? 'Logged out ✓'
+        ? 'تم الخروج ✓'
         : initialLabel;
 
   const isDoorOpen = isHovered || status === 'logging-out';
