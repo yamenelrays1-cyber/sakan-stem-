@@ -1,11 +1,13 @@
 import {
   DORM_ROOMS,
+  SYRIAN_SANDWICHES_MENU,
   type MasterAggregatedItem,
   type OrderCategory,
   type PaymentMethod,
   type RoommateFinancialSummary,
   type RoommateOrderItem,
   type SessionFinancialSummary,
+  type SyrianMenuOption,
 } from '../types/orders.ts';
 import {
   sanitizeTextInput,
@@ -403,21 +405,38 @@ export function isArabicOnlyOrderText(raw: string): boolean {
   return arabicLetters.length >= 2;
 }
 
+export { SYRIAN_SANDWICHES_MENU, type SyrianMenuOption };
+
+/**
+ * Finds a Syrian Sandwiches menu option by its itemName or normalized Arabic key.
+ */
+export function findSyrianMenuItem(rawItemName: string): SyrianMenuOption | undefined {
+  const norm = normalizeArabicItemName(rawItemName || '');
+  if (!norm) return undefined;
+  return SYRIAN_SANDWICHES_MENU.find(
+    (opt) => opt.itemName === rawItemName.trim() || normalizeArabicItemName(opt.itemName) === norm
+  );
+}
+
 /**
  * Strictly validates form input against the schema limits.
  * Requires Arabic-only roommateName and itemName, and English digits (0-9) for all numbers.
+ * When options.isSyrianMenuEnabled is true, restricts orders strictly to SYRIAN_SANDWICHES_MENU.
  */
-export function validateOrderItemInput(input: {
-  roommateName: string;
-  roomNumber: string;
-  itemName: string;
-  category: OrderCategory;
-  quantity: number | string;
-  unitPrice: number | string;
-  paymentMethod: PaymentMethod;
-  cashPaidAmount: number | string;
-  notes: string;
-}): OrderInputValidationResult {
+export function validateOrderItemInput(
+  input: {
+    roommateName: string;
+    roomNumber: string;
+    itemName: string;
+    category: OrderCategory;
+    quantity: number | string;
+    unitPrice: number | string;
+    paymentMethod: PaymentMethod;
+    cashPaidAmount: number | string;
+    notes: string;
+  },
+  options?: { isSyrianMenuEnabled?: boolean }
+): OrderInputValidationResult {
   if (
     hasDangerousInjectionPayload(input.roommateName) ||
     hasDangerousInjectionPayload(input.itemName) ||
@@ -446,7 +465,7 @@ export function validateOrderItemInput(input: {
   const roommateName = sanitizeTextInput(rawName, 60);
   const rawRoomTrimmed = toEnglishDigits(input.roomNumber || '').trim();
   const roomNumber = normalizeDormRoomInput(rawRoomTrimmed);
-  const itemName = sanitizeTextInput(rawItem, 100);
+  let itemName = sanitizeTextInput(rawItem, 100);
   const notes = sanitizeTextInput(rawNotes, 160);
 
   if (!roommateName || roommateName.length < 2) {
@@ -462,7 +481,12 @@ export function validateOrderItemInput(input: {
     return { valid: false, error: 'من فضلك اكتب رقم الغرفة بالأرقام الإنجليزي فقط.' };
   }
   if (!itemName) {
-    return { valid: false, error: 'من فضلك اكتب اسم الصنف المطلوب باللغة العربية.' };
+    return {
+      valid: false,
+      error: options?.isSyrianMenuEnabled
+        ? 'من فضلك اختر صنفاً من قائمة سندوتشات سوري المتاحة.'
+        : 'من فضلك اكتب اسم الصنف المطلوب باللغة العربية.',
+    };
   }
   if (!isArabicOnlyOrderText(itemName)) {
     return { valid: false, error: 'يرجى كتابة الطلب باللغة العربية فقط.' };
@@ -476,7 +500,19 @@ export function validateOrderItemInput(input: {
     return { valid: false, error: 'الكمية لازم تكون رقم صحيح من 1 لـ 100.' };
   }
 
-  const unitPrice = Number(toEnglishDigits(String(input.unitPrice)));
+  let unitPrice = Number(toEnglishDigits(String(input.unitPrice)));
+  if (options?.isSyrianMenuEnabled) {
+    const matchedMenuOption = findSyrianMenuItem(itemName);
+    if (!matchedMenuOption) {
+      return {
+        valid: false,
+        error: 'من فضلك اختر من أصناف سندوتشات سوري المحددة فقط.',
+      };
+    }
+    itemName = matchedMenuOption.itemName;
+    unitPrice = matchedMenuOption.unitPrice;
+  }
+
   if (!Number.isFinite(unitPrice) || unitPrice <= 0 || unitPrice > 10000) {
     return { valid: false, error: 'من فضلك اكتب سعر الوحدة بالأرقام الإنجليزي (أكبر من صفر).' };
   }

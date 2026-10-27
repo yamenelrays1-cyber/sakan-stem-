@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
+  SYRIAN_SANDWICHES_MENU,
   type DormRoom,
   type OrderCategory,
   type PaymentMethod,
+  type SyrianMenuOption,
 } from '../types/orders';
-import { validateOrderItemInput } from '../utils/orderAggregator';
-import { normalizeDormRoomInput } from '../utils/emailOtpService';
+import { validateOrderItemInput, findSyrianMenuItem } from '../utils/orderAggregator';
+import { normalizeDormRoomInput, toEnglishDigits } from '../utils/emailOtpService';
 
 export const SAVED_STUDENT_NAME_KEY = 'sakan_saved_student_name_v3';
 export const SAVED_STUDENT_ROOM_KEY = 'sakan_saved_student_room_v3';
@@ -17,6 +19,7 @@ interface OrderFormCardProps {
   isOrdersLocked?: boolean;
   isDeliveryEnabled?: boolean;
   deliveryFee?: number;
+  isSyrianMenuEnabled?: boolean;
   savedStudentName?: string;
   savedStudentRoom?: DormRoom | '';
   savedStudentEmail?: string;
@@ -37,15 +40,35 @@ interface OrderFormCardProps {
   }) => Promise<void> | void;
 }
 
+const SIZED_SYRIAN_GROUPS = [
+  {
+    title: 'بطاطس',
+    options: SYRIAN_SANDWICHES_MENU.filter((o) => o.groupTitle === 'بطاطس'),
+  },
+  {
+    title: 'بطاطس موتزريلا',
+    options: SYRIAN_SANDWICHES_MENU.filter((o) => o.groupTitle === 'بطاطس موتزريلا'),
+  },
+  {
+    title: 'بطاطس باكت',
+    options: SYRIAN_SANDWICHES_MENU.filter((o) => o.groupTitle === 'بطاطس باكت'),
+  },
+];
+
+const TOUMIA_OPTIONS = SYRIAN_SANDWICHES_MENU.filter((o) => o.groupTitle === 'تومية');
+const SAUCE_OPTIONS = SYRIAN_SANDWICHES_MENU.filter(
+  (o) => o.id === 'sauce_texas' || o.id === 'sauce_cheddar'
+);
+
 export const OrderFormCard: React.FC<OrderFormCardProps> = ({
   formRef,
   nameInputRef,
   isOrdersLocked = false,
   isDeliveryEnabled = false,
   deliveryFee = 0,
+  isSyrianMenuEnabled = false,
   savedStudentName,
   savedStudentRoom,
-  savedStudentEmail,
   ordersCount = 0,
   deleteSignal = 0,
   onAddOrder,
@@ -72,7 +95,7 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
     }
   });
 
-  const [isEditingProfileInline, setIsEditingProfileInline] = useState<boolean>(false);
+  const [, setIsEditingProfileInline] = useState<boolean>(false);
   const [inputNonce, setInputNonce] = useState<number>(() => Date.now());
 
   const [itemName, setItemName] = useState<string>('');
@@ -107,6 +130,22 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
     }
   }, [savedStudentRoom]);
 
+  // When Supervisor enables Syrian Sandwiches menu, ensure selected item is from the Syrian menu
+  useEffect(() => {
+    if (isSyrianMenuEnabled) {
+      const existingMatch = findSyrianMenuItem(itemName);
+      if (existingMatch) {
+        setItemName(existingMatch.itemName);
+        setUnitPrice(String(existingMatch.unitPrice));
+      } else {
+        const defaultOption = SYRIAN_SANDWICHES_MENU[0];
+        setItemName(defaultOption.itemName);
+        setUnitPrice(String(defaultOption.unitPrice));
+      }
+      setValidationError(null);
+    }
+  }, [isSyrianMenuEnabled]);
+
   useEffect(() => {
     try {
       if (roommateName.trim()) {
@@ -136,12 +175,20 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
   const activeDeliveryAmount =
     isDeliveryEnabled && deliveryFee > 0 ? Math.round(deliveryFee * 100) / 100 : 0;
 
+  const handleSelectSyrianOption = (opt: SyrianMenuOption) => {
+    if (isOrdersLocked) return;
+    setItemName(opt.itemName);
+    setUnitPrice(String(opt.unitPrice));
+    setValidationError(null);
+  };
+
   const handleQuantityChange = (newQty: number) => {
     const clamped = Math.max(1, Math.min(100, newQty));
     setQuantity(clamped);
   };
 
   const handleUnitPriceChange = (val: string) => {
+    if (isSyrianMenuEnabled) return;
     const eng = toEnglishDigits(val).replace(/[^0-9.]/g, '');
     setUnitPrice(eng);
   };
@@ -155,24 +202,29 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
       return false;
     }
 
-    const validation = validateOrderItemInput({
-      roommateName,
-      roomNumber,
-      itemName,
-      category: 'snacks',
-      quantity,
-      unitPrice,
-      paymentMethod: 'cash',
-      cashPaidAmount: lineTotal,
-      notes: '',
-    });
+    const validation = validateOrderItemInput(
+      {
+        roommateName,
+        roomNumber,
+        itemName,
+        category: 'snacks',
+        quantity,
+        unitPrice,
+        paymentMethod: 'cash',
+        cashPaidAmount: lineTotal,
+        notes: '',
+      },
+      { isSyrianMenuEnabled }
+    );
 
     if (!validation.valid || !validation.sanitized) {
       setValidationError(validation.error || 'بيانات الطلب غير مكتملة.');
       return false;
     }
 
-    setItemName('');
+    if (!isSyrianMenuEnabled) {
+      setItemName('');
+    }
     setInputNonce(Date.now());
     await onAddOrder(validation.sanitized);
 
@@ -197,6 +249,11 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
           <h1 className="text-lg font-bold text-slate-900">نسخة الطلاب — سجل طلباتك</h1>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
+          {isSyrianMenuEnabled && (
+            <span className="px-2.5 py-1 rounded-lg bg-amber-200 text-amber-950 border border-amber-300 text-xs font-extrabold">
+              🌯 سندوتشات سوري
+            </span>
+          )}
           {activeDeliveryAmount > 0 && (
             <span className="px-2.5 py-1 rounded-lg bg-amber-100 text-amber-900 border border-amber-200 text-xs font-bold font-mono tabular-nums">
               🛵 الدليفري: {activeDeliveryAmount} ج.م
@@ -289,45 +346,188 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
           </div>
         )}
 
-        {/* Item Name (Direct Input Only — No Browser Autocomplete History) */}
-        <div>
-          <label
-            htmlFor={`sakan-item-field-${inputNonce}`}
-            className="block text-xs font-semibold text-slate-700 mb-1.5"
+        {/* Item Selection: Either Syrian Sandwiches Menu ONLY or Free Input */}
+        {isSyrianMenuEnabled ? (
+          <div
+            id="syrian-sandwiches-menu-picker"
+            className="p-4 rounded-2xl bg-amber-50/60 border-2 border-amber-300/80 space-y-4"
           >
-            الطلب (اسم الصنف) <span className="text-rose-600">*</span>
-          </label>
-          <input
-            id={`sakan-item-field-${inputNonce}`}
-            name={`sakan_item_field_${inputNonce}`}
-            type="text"
-            lang="ar"
-            dir="rtl"
-            required
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            aria-autocomplete="none"
-            data-form-type="other"
-            data-lpignore="true"
-            disabled={isOrdersLocked}
-            placeholder="اسم الصنف"
-            value={itemName}
-            onChange={(e) => {
-              const rawVal = toEnglishDigits(e.target.value);
-              if (/[a-zA-Z]/.test(rawVal)) {
-                const stripped = rawVal.replace(/[a-zA-Z]/g, '');
-                setItemName(stripped);
-                setValidationError('يرجى كتابة الطلب باللغة العربية فقط (والأرقام بالإنجليزي).');
-                return;
-              }
-              setItemName(rawVal);
-              setValidationError(null);
-            }}
-            className="w-full h-11 px-3.5 text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:bg-slate-100 disabled:text-slate-400"
-          />
-        </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-amber-200/80">
+              <div>
+                <h2 className="text-sm sm:text-base font-extrabold text-slate-900">
+                  🌯 قائمة سندوتشات سوري (اختر الصنف والحجم)
+                </h2>
+                <p className="text-[11px] font-semibold text-amber-900 mt-0.5">
+                  المشرف فعّل طلبات السندوتشات السوري — اختر من الأصناف المتاحة بالأسفل فقط:
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs font-extrabold">
+                <span className="px-2 py-0.5 rounded-full bg-rose-900 text-amber-300 font-mono">
+                  M = وسط
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-rose-900 text-amber-300 font-mono">
+                  L = كبير
+                </span>
+              </div>
+            </div>
+
+            {/* Section 1: Fries Sandwiches (M / L) */}
+            <div className="space-y-2.5">
+              {SIZED_SYRIAN_GROUPS.map((group) => (
+                <div
+                  key={group.title}
+                  className="p-3 rounded-xl bg-white border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+                >
+                  <div className="text-sm font-extrabold text-slate-900">{group.title}</div>
+                  <div className="grid grid-cols-2 gap-2 sm:w-72">
+                    {group.options.map((opt) => {
+                      const isSelected = itemName === opt.itemName;
+                      return (
+                        <button
+                          key={opt.id}
+                          id={`syrian-opt-${opt.id}`}
+                          type="button"
+                          disabled={isOrdersLocked}
+                          onClick={() => handleSelectSyrianOption(opt)}
+                          className={`min-h-[42px] px-3 py-2 rounded-xl border text-xs font-extrabold flex items-center justify-between gap-1.5 transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-slate-900 text-amber-300 border-slate-900 ring-2 ring-amber-400 shadow-xs'
+                              : 'bg-slate-50 hover:bg-amber-100/70 text-slate-900 border-slate-300'
+                          }`}
+                        >
+                          <span className="flex items-center gap-1">
+                            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-rose-900 text-amber-300 font-mono text-[11px] font-black">
+                              {opt.sizeBadge}
+                            </span>
+                            <span>{opt.sizeLabelAr}</span>
+                          </span>
+                          <span className="font-mono tabular-nums font-black">
+                            {opt.unitPrice} ج.م
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Section 2: Extras & Sauces (إضافات وصوصات) */}
+            <div className="pt-2 border-t border-amber-200/80 space-y-2.5">
+              <div className="text-xs font-extrabold text-rose-900">
+                إضافات وصوصات:
+              </div>
+
+              {/* تومية (M / L) */}
+              <div className="p-3 rounded-xl bg-white border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div className="text-sm font-extrabold text-slate-900">تومية</div>
+                <div className="grid grid-cols-2 gap-2 sm:w-72">
+                  {TOUMIA_OPTIONS.map((opt) => {
+                    const isSelected = itemName === opt.itemName;
+                    return (
+                      <button
+                        key={opt.id}
+                        id={`syrian-opt-${opt.id}`}
+                        type="button"
+                        disabled={isOrdersLocked}
+                        onClick={() => handleSelectSyrianOption(opt)}
+                        className={`min-h-[42px] px-3 py-2 rounded-xl border text-xs font-extrabold flex items-center justify-between gap-1.5 transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-slate-900 text-amber-300 border-slate-900 ring-2 ring-amber-400 shadow-xs'
+                            : 'bg-slate-50 hover:bg-amber-100/70 text-slate-900 border-slate-300'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1">
+                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-rose-900 text-amber-300 font-mono text-[11px] font-black">
+                            {opt.sizeBadge}
+                          </span>
+                          <span>{opt.sizeLabelAr}</span>
+                        </span>
+                        <span className="font-mono tabular-nums font-black">
+                          {opt.unitPrice} ج.م
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* صوص تكساس & صوص شيدر */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {SAUCE_OPTIONS.map((opt) => {
+                  const isSelected = itemName === opt.itemName;
+                  return (
+                    <button
+                      key={opt.id}
+                      id={`syrian-opt-${opt.id}`}
+                      type="button"
+                      disabled={isOrdersLocked}
+                      onClick={() => handleSelectSyrianOption(opt)}
+                      className={`min-h-[44px] px-4 py-2.5 rounded-xl border text-sm font-extrabold flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-slate-900 text-amber-300 border-slate-900 ring-2 ring-amber-400 shadow-xs'
+                          : 'bg-white hover:bg-amber-100/70 text-slate-900 border-amber-200'
+                      }`}
+                    >
+                      <span>{opt.itemName}</span>
+                      <span className="font-mono tabular-nums font-black">
+                        {opt.unitPrice} ج.م
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Active Choice Indicator */}
+            <div className="p-2.5 rounded-xl bg-slate-900 text-white flex items-center justify-between text-xs font-bold">
+              <span>الصنف المختار حالياً:</span>
+              <span className="text-amber-300 font-extrabold">
+                {itemName} — {numericUnitPrice} ج.م للواحدة
+              </span>
+            </div>
+          </div>
+        ) : (
+          /* Item Name (Direct Input Only — No Browser Autocomplete History) */
+          <div>
+            <label
+              htmlFor={`sakan-item-field-${inputNonce}`}
+              className="block text-xs font-semibold text-slate-700 mb-1.5"
+            >
+              الطلب (اسم الصنف) <span className="text-rose-600">*</span>
+            </label>
+            <input
+              id={`sakan-item-field-${inputNonce}`}
+              name={`sakan_item_field_${inputNonce}`}
+              type="text"
+              lang="ar"
+              dir="rtl"
+              required
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              aria-autocomplete="none"
+              data-form-type="other"
+              data-lpignore="true"
+              disabled={isOrdersLocked}
+              placeholder="اسم الصنف"
+              value={itemName}
+              onChange={(e) => {
+                const rawVal = toEnglishDigits(e.target.value);
+                if (/[a-zA-Z]/.test(rawVal)) {
+                  const stripped = rawVal.replace(/[a-zA-Z]/g, '');
+                  setItemName(stripped);
+                  setValidationError('يرجى كتابة الطلب باللغة العربية فقط (والأرقام بالإنجليزي).');
+                  return;
+                }
+                setItemName(rawVal);
+                setValidationError(null);
+              }}
+              className="w-full h-11 px-3.5 text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:bg-slate-100 disabled:text-slate-400"
+            />
+          </div>
+        )}
 
         {/* Quantity + Unit Price + Item Subtotal */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
@@ -379,11 +579,12 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
               type="text"
               inputMode="decimal"
               dir="ltr"
-              disabled={isOrdersLocked}
+              readOnly={isSyrianMenuEnabled}
+              disabled={isOrdersLocked || isSyrianMenuEnabled}
               placeholder="15"
               value={unitPrice}
               onChange={(e) => handleUnitPriceChange(e.target.value)}
-              className="w-full h-11 px-3.5 text-sm font-mono tabular-nums bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:bg-slate-100 disabled:text-slate-400"
+              className="w-full h-11 px-3.5 text-sm font-mono tabular-nums bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:bg-slate-100 disabled:text-slate-600"
             />
           </div>
 
@@ -416,6 +617,10 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
           >
             {isOrdersLocked ? (
               <span>الطلبات مقفولة حالياً من المشرف</span>
+            ) : isSyrianMenuEnabled && itemName ? (
+              <span>
+                إضافة ({quantity} × {itemName}) لطلباتك ({lineTotal} ج.م)
+              </span>
             ) : (
               <span>إضافة لطلباتك ({lineTotal} ج.م)</span>
             )}
@@ -425,3 +630,4 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
     </div>
   );
 };
+

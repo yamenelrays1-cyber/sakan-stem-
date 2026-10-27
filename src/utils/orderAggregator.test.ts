@@ -457,5 +457,47 @@ test('validateOrderItemInput rejects English or non-Arabic order item names and 
   assert.equal(arabicOrder.sanitized?.itemName, 'شيبسي عائلي');
 });
 
+test('when isSyrianMenuEnabled is true, validateOrderItemInput accepts only SYRIAN_SANDWICHES_MENU items and enforces menu prices', async () => {
+  const { SYRIAN_SANDWICHES_MENU } = await import('./orderAggregator.ts');
+  assert.equal(SYRIAN_SANDWICHES_MENU.length, 10);
 
+  // Non-Syrian item is rejected when Syrian menu mode is active
+  const nonSyrian = validateOrderItemInput(
+    {
+      roommateName: 'أحمد محمد',
+      roomNumber: '404',
+      itemName: 'شيبسي عائلي',
+      category: 'snacks',
+      quantity: 1,
+      unitPrice: 15,
+      paymentMethod: 'cash',
+      cashPaidAmount: 15,
+      notes: '',
+    },
+    { isSyrianMenuEnabled: true }
+  );
+  assert.equal(nonSyrian.valid, false);
+  assert.equal(nonSyrian.error, 'من فضلك اختر من أصناف سندوتشات سوري المحددة فقط.');
+
+  // All 10 Syrian menu items are accepted and enforce their official menu price
+  for (const menuOpt of SYRIAN_SANDWICHES_MENU) {
+    const res = validateOrderItemInput(
+      {
+        roommateName: 'أحمد محمد',
+        roomNumber: '404',
+        itemName: menuOpt.itemName,
+        category: 'snacks',
+        quantity: 2,
+        unitPrice: 999, // Even if tampered, enforced to menuOpt.unitPrice
+        paymentMethod: 'cash',
+        cashPaidAmount: menuOpt.unitPrice * 2,
+        notes: '',
+      },
+      { isSyrianMenuEnabled: true }
+    );
+    assert.equal(res.valid, true, `Expected ${menuOpt.itemName} to be valid`);
+    assert.equal(res.sanitized?.itemName, menuOpt.itemName);
+    assert.equal(res.sanitized?.unitPrice, menuOpt.unitPrice);
+  }
+});
 

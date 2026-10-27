@@ -333,20 +333,6 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       } else {
         playIncomingMailSound();
       }
-
-      try {
-        if (
-          typeof window !== 'undefined' &&
-          'Notification' in window &&
-          Notification.permission === 'granted'
-        ) {
-          new Notification(`📩 كود تأكيد الإيميل (${targetEmail})`, {
-            body: `رمز التحقق المكون من 4 أرقام في talabat el sakan هو: ${immediateCode}`,
-          });
-        }
-      } catch {
-        // ignore notification errors
-      }
     } catch {
       setEmailServiceError(
         'حدث خطأ غير متوقع أثناء إرسال كود التحقق عبر EmailJS — يرجى المحاولة مرة أخرى.'

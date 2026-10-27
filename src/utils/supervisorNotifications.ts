@@ -1,8 +1,5 @@
 // Distinctive 3.6-Second Audio & External System/Web-Push Notification Manager for Supervisor (المشرف) Order Lock/Unlock Events
 
-const PERMANENT_VAPID_PUBLIC_KEY =
-  'BIOUj2pBaImVs_V8UmVvuGPlqXKbcUNmapsleBZHVIh-w0KXZfyEVBltsF7x4tgGwxP-76dLF8NA5mY9MqIMZwY';
-
 let sharedAudioCtx: AudioContext | null = null;
 let preloadedOpenAudio: HTMLAudioElement | null = null;
 let preloadedLockAudio: HTMLAudioElement | null = null;
@@ -124,7 +121,7 @@ export async function registerBackgroundPushSubscription(
       return null;
     }
 
-    let publicKey = PERMANENT_VAPID_PUBLIC_KEY;
+    let publicKey = '';
     try {
       const res = await fetch('/api/push/vapid-public-key');
       if (res.ok) {
@@ -132,8 +129,9 @@ export async function registerBackgroundPushSubscription(
         if (data.publicKey) publicKey = data.publicKey;
       }
     } catch {
-      // fallback to PERMANENT_VAPID_PUBLIC_KEY
+      // ignore fetch error
     }
+    if (!publicKey) return null;
 
     const convertedKey = urlBase64ToUint8Array(publicKey);
     let subscription = await readyRegistration.pushManager.getSubscription();

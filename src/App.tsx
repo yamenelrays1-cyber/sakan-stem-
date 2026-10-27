@@ -19,6 +19,7 @@ import {
 import {
   sanitizeTextInput,
   normalizeDormRoomInput,
+  toEnglishDigits,
   verifySessionPayload,
   createVerifiedSessionPayload,
   evaluateAttemptRateLimit,
@@ -47,21 +48,6 @@ import {
   triggerSupervisorLockNotification,
   unlockNotificationAudioOnInteraction,
 } from './utils/supervisorNotifications';
-import {
-  auth,
-  db,
-  onAuthStateChanged,
-  signInWithGoogle,
-  signOutUser,
-  doc,
-  setDoc,
-  updateDoc,
-  deleteDoc,
-  serverTimestamp,
-  handleFirestoreError,
-  OperationType,
-  type User,
-} from './lib/firebase';
 
 const LOCAL_STORAGE_DEVICE_ID_KEY = 'sakan_phone_device_id_v1';
 const LOCAL_STORAGE_BASE_PHONE_ID_KEY = 'sakan_base_phone_id_v1';
@@ -225,7 +211,6 @@ export default function App() {
   const [savedStudentRoom, setSavedStudentRoom] = useState<DormRoom | ''>(getSavedStudentRoom);
   const [savedStudentEmail, setSavedStudentEmail] = useState<string>(getSavedStudentEmail);
 
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [edition, setEdition] = useState<AppEdition>(getInitialEditionFromUrl);
   const [showEntryScreen, setShowEntryScreen] = useState<boolean>(() => {
     if (getInitialEditionFromUrl() === 'master') return false;
@@ -243,6 +228,13 @@ export default function App() {
   const [isOrdersLocked, setIsOrdersLocked] = useState(false);
   const [isDeliveryEnabled, setIsDeliveryEnabled] = useState<boolean>(false);
   const [deliveryFee, setDeliveryFee] = useState<number>(5);
+  const [isSyrianMenuEnabled, setIsSyrianMenuEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('sakan_syrian_menu_enabled_v1') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [passcodeInput, setPasscodeInput] = useState('');
   const [passcodeError, setPasscodeError] = useState<string | null>(null);
   const [copiedSummaryRecently, setCopiedSummaryRecently] = useState(false);
@@ -470,6 +462,14 @@ export default function App() {
         setIsDeliveryEnabled(enabled);
         setDeliveryFee(fee);
       },
+      onSyrianMenuStatusChange: (enabled) => {
+        setIsSyrianMenuEnabled(enabled);
+        try {
+          localStorage.setItem('sakan_syrian_menu_enabled_v1', enabled ? 'true' : 'false');
+        } catch {
+          // ignore
+        }
+      },
       onPushSubscriptionReceived: (subDeviceId, sub) => {
         mqttPushSubsRef.current[subDeviceId] = sub;
         fetch('/api/push/subscribe', {
@@ -522,6 +522,17 @@ export default function App() {
         if (typeof data.deliveryFee === 'number') {
           setDeliveryFee(data.deliveryFee);
         }
+        if (typeof data.isSyrianMenuEnabled === 'boolean') {
+          setIsSyrianMenuEnabled(data.isSyrianMenuEnabled);
+          try {
+            localStorage.setItem(
+              'sakan_syrian_menu_enabled_v1',
+              data.isSyrianMenuEnabled ? 'true' : 'false'
+            );
+          } catch {
+            // ignore
+          }
+        }
       }
     } catch {
       // ignore offline fetch errors
@@ -546,6 +557,17 @@ export default function App() {
         }
         if (typeof data.deliveryFee === 'number') {
           setDeliveryFee(data.deliveryFee);
+        }
+        if (typeof data.isSyrianMenuEnabled === 'boolean') {
+          setIsSyrianMenuEnabled(data.isSyrianMenuEnabled);
+          try {
+            localStorage.setItem(
+              'sakan_syrian_menu_enabled_v1',
+              data.isSyrianMenuEnabled ? 'true' : 'false'
+            );
+          } catch {
+            // ignore
+          }
         }
       }
     } catch {
@@ -573,6 +595,7 @@ export default function App() {
           isOrdersLocked?: boolean;
           isDeliveryEnabled?: boolean;
           deliveryFee?: number;
+          isSyrianMenuEnabled?: boolean;
         };
         if (typeof parsed.isOrdersLocked === 'boolean') {
           applyIncomingLockState(
@@ -586,6 +609,17 @@ export default function App() {
         if (typeof parsed.deliveryFee === 'number') {
           setDeliveryFee(parsed.deliveryFee);
         }
+        if (typeof parsed.isSyrianMenuEnabled === 'boolean') {
+          setIsSyrianMenuEnabled(parsed.isSyrianMenuEnabled);
+          try {
+            localStorage.setItem(
+              'sakan_syrian_menu_enabled_v1',
+              parsed.isSyrianMenuEnabled ? 'true' : 'false'
+            );
+          } catch {
+            // ignore
+          }
+        }
       } catch {
         // ignore parse errors
       }
@@ -598,14 +632,6 @@ export default function App() {
       evtSource.close();
     };
   }, [fetchMyPhoneOrders, fetchMasterOrders, isMasterUnlocked, applyIncomingLockState]);
-
-  // Listen to Firebase Auth state
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-    });
-    return () => unsub();
-  }, []);
 
   const handleSelectEdition = (nextEdition: AppEdition) => {
     setEdition(nextEdition);
@@ -916,9 +942,9 @@ export default function App() {
       id: newId,
       deviceId,
       sessionId: DEFAULT_ROOM_CODE,
-      sessionOwnerId: currentUser ? currentUser.uid : 'demo_owner_1',
-      authorUid: currentUser ? currentUser.uid : 'demo_owner_1',
-      memberUids: currentUser ? [currentUser.uid] : ['demo_owner_1'],
+      sessionOwnerId: 'sakan_default_owner',
+      authorUid: 'sakan_default_owner',
+      memberUids: ['sakan_default_owner'],
       roommateName: sanitized.roommateName,
       roomNumber: sanitized.roomNumber,
       itemName: sanitized.itemName,
@@ -986,34 +1012,6 @@ export default function App() {
       }
     } catch {
       // ignore network error
-    }
-
-    if (currentUser && db) {
-      const orderRef = doc(db, 'sessions', DEFAULT_ROOM_CODE, 'orders', newId);
-      try {
-        await setDoc(orderRef, {
-          sessionId: DEFAULT_ROOM_CODE,
-          sessionOwnerId: currentUser.uid,
-          authorUid: currentUser.uid,
-          memberUids: [currentUser.uid],
-          roommateName: newOrder.roommateName,
-          roomNumber: newOrder.roomNumber,
-          itemName: newOrder.itemName,
-          normalizedItemKey: newOrder.normalizedItemKey,
-          category: newOrder.category,
-          quantity: newOrder.quantity,
-          unitPrice: newOrder.unitPrice,
-          paymentMethod: newOrder.paymentMethod,
-          cashPaidAmount: newOrder.cashPaidAmount,
-          isPaid: newOrder.isPaid,
-          isPurchased: newOrder.isPurchased,
-          notes: newOrder.notes,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, `sessions/${DEFAULT_ROOM_CODE}/orders/${newId}`);
-      }
     }
   };
 
@@ -1265,15 +1263,6 @@ export default function App() {
         desiredCash
       );
     }
-
-    if (currentUser && db) {
-      const orderRef = doc(db, 'sessions', DEFAULT_ROOM_CODE, 'orders', orderId);
-      try {
-        await deleteDoc(orderRef);
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `sessions/${DEFAULT_ROOM_CODE}/orders/${orderId}`);
-      }
-    }
   };
 
   const handleToggleOrdersLock = async () => {
@@ -1335,6 +1324,36 @@ export default function App() {
     }
   };
 
+  const handleToggleSyrianMenu = async () => {
+    const nextEnabled = !isSyrianMenuEnabled;
+    setIsSyrianMenuEnabled(nextEnabled);
+    try {
+      localStorage.setItem('sakan_syrian_menu_enabled_v1', nextEnabled ? 'true' : 'false');
+    } catch {
+      // ignore
+    }
+    mqttRef.current?.publishSyrianMenuStatus(nextEnabled);
+
+    try {
+      await fetch('/api/orders/syrian-menu', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          passcode: MASTER_PASSCODE,
+          enabled: nextEnabled,
+        }),
+      });
+    } catch {
+      // ignore
+    }
+
+    setStatusBanner(
+      nextEnabled
+        ? 'تم تفعيل قائمة سندوتشات سوري للطلاب 🌯 — يظهر للطلاب الآن أصناف السوري فقط.'
+        : 'تم إيقاف قائمة سندوتشات سوري — عاد الطلب الحر للطلاب.'
+    );
+  };
+
   const handleClearAllOrders = async () => {
     const allIds = combinedAllOrders.map((o) => o.id);
     mqttRef.current?.clearAllOrders(allIds);
@@ -1389,20 +1408,6 @@ export default function App() {
     setTimeout(() => setCopiedSummaryRecently(false), 3000);
   };
 
-  const handleSignIn = async () => {
-    try {
-      await signInWithGoogle();
-      setStatusBanner('تم تسجيل الدخول بحساب Google وتفعيل المزامنة.');
-    } catch {
-      setStatusBanner('تعذر فتح نافذة تسجيل الدخول حالياً.');
-    }
-  };
-
-  const handleSignOut = async () => {
-    await signOutUser();
-    setStatusBanner('تم تسجيل الخروج.');
-  };
-
   return (
     <div
       id="top"
@@ -1438,9 +1443,6 @@ export default function App() {
       {!showEntryScreen && edition === 'master' && isMasterUnlocked && (
         <SessionToolbar
           financials={financials}
-          currentUser={currentUser}
-          onSignIn={handleSignIn}
-          onSignOut={handleSignOut}
           onClearAllOrders={handleClearAllOrders}
           onCopyMasterSummary={handleCopyMasterSummary}
           copiedSummaryRecently={copiedSummaryRecently}
@@ -1449,6 +1451,8 @@ export default function App() {
           isDeliveryEnabled={isDeliveryEnabled}
           deliveryFee={deliveryFee}
           onUpdateDeliverySettings={handleUpdateDeliverySettings}
+          isSyrianMenuEnabled={isSyrianMenuEnabled}
+          onToggleSyrianMenu={handleToggleSyrianMenu}
         />
       )}
 
@@ -1568,6 +1572,7 @@ export default function App() {
               isOrdersLocked={isOrdersLocked}
               isDeliveryEnabled={isDeliveryEnabled}
               deliveryFee={deliveryFee}
+              isSyrianMenuEnabled={isSyrianMenuEnabled}
               savedStudentName={savedStudentName}
               savedStudentRoom={savedStudentRoom}
               savedStudentEmail={savedStudentEmail}

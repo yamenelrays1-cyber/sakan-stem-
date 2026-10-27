@@ -117,3 +117,114 @@ export interface SessionFinancialSummary {
   totalChangeToReturn: number;
   cashShortfall: number;
 }
+
+export interface SyrianMenuOption {
+  id: string;
+  groupTitle: string;
+  baseName: string;
+  sizeBadge?: 'M' | 'L';
+  sizeLabelAr?: 'وسط' | 'كبير';
+  itemName: string;
+  unitPrice: number;
+  section: 'sandwiches' | 'sauces_extras';
+}
+
+export const SYRIAN_SANDWICHES_MENU: readonly SyrianMenuOption[] = [
+  {
+    id: 'fries_m',
+    groupTitle: 'بطاطس',
+    baseName: 'بطاطس',
+    sizeBadge: 'M',
+    sizeLabelAr: 'وسط',
+    itemName: 'بطاطس وسط',
+    unitPrice: 25,
+    section: 'sandwiches',
+  },
+  {
+    id: 'fries_l',
+    groupTitle: 'بطاطس',
+    baseName: 'بطاطس',
+    sizeBadge: 'L',
+    sizeLabelAr: 'كبير',
+    itemName: 'بطاطس كبير',
+    unitPrice: 30,
+    section: 'sandwiches',
+  },
+  {
+    id: 'fries_mozzarella_m',
+    groupTitle: 'بطاطس موتزريلا',
+    baseName: 'بطاطس موتزريلا',
+    sizeBadge: 'M',
+    sizeLabelAr: 'وسط',
+    itemName: 'بطاطس موتزريلا وسط',
+    unitPrice: 35,
+    section: 'sandwiches',
+  },
+  {
+    id: 'fries_mozzarella_l',
+    groupTitle: 'بطاطس موتزريلا',
+    baseName: 'بطاطس موتزريلا',
+    sizeBadge: 'L',
+    sizeLabelAr: 'كبير',
+    itemName: 'بطاطس موتزريلا كبير',
+    unitPrice: 40,
+    section: 'sandwiches',
+  },
+  {
+    id: 'fries_packet_m',
+    groupTitle: 'بطاطس باكت',
+    baseName: 'بطاطس باكت',
+    sizeBadge: 'M',
+    sizeLabelAr: 'وسط',
+    itemName: 'بطاطس باكت وسط',
+    unitPrice: 30,
+    section: 'sandwiches',
+  },
+  {
+    id: 'fries_packet_l',
+    groupTitle: 'بطاطس باكت',
+    baseName: 'بطاطس باكت',
+    sizeBadge: 'L',
+    sizeLabelAr: 'كبير',
+    itemName: 'بطاطس باكت كبير',
+    unitPrice: 40,
+    section: 'sandwiches',
+  },
+  {
+    id: 'toumia_m',
+    groupTitle: 'تومية',
+    baseName: 'تومية',
+    sizeBadge: 'M',
+    sizeLabelAr: 'وسط',
+    itemName: 'تومية وسط',
+    unitPrice: 5,
+    section: 'sauces_extras',
+  },
+  {
+    id: 'toumia_l',
+    groupTitle: 'تومية',
+    baseName: 'تومية',
+    sizeBadge: 'L',
+    sizeLabelAr: 'كبير',
+    itemName: 'تومية كبير',
+    unitPrice: 10,
+    section: 'sauces_extras',
+  },
+  {
+    id: 'sauce_texas',
+    groupTitle: 'صوص تكساس',
+    baseName: 'صوص تكساس',
+    itemName: 'صوص تكساس',
+    unitPrice: 15,
+    section: 'sauces_extras',
+  },
+  {
+    id: 'sauce_cheddar',
+    groupTitle: 'صوص شيدر',
+    baseName: 'صوص شيدر',
+    itemName: 'صوص شيدر',
+    unitPrice: 15,
+    section: 'sauces_extras',
+  },
+] as const;
+

@@ -47,6 +47,11 @@ export function getDeliveryStatusTopic(roomCode: string): string {
   return `sakan_app/${cleanRoom}/status/delivery`;
 }
 
+export function getSyrianMenuStatusTopic(roomCode: string): string {
+  const cleanRoom = (roomCode || DEFAULT_ROOM_CODE).trim();
+  return `sakan_app/${cleanRoom}/status/syrian_menu`;
+}
+
 export function getPushSubTopic(roomCode: string, deviceId: string): string {
   const cleanRoom = (roomCode || DEFAULT_ROOM_CODE).trim();
   return `sakan_app/${cleanRoom}/push_subs/${deviceId}`;
@@ -64,6 +69,7 @@ export class SakanMqttSync {
   private onStatusChange: (status: MqttConnectionStatus) => void;
   private onLockStatusChange?: (locked: boolean) => void;
   private onDeliveryStatusChange?: (enabled: boolean, fee: number) => void;
+  private onSyrianMenuStatusChange?: (enabled: boolean) => void;
   private onPushSubscriptionReceived?: (deviceId: string, sub: PushSubscriptionJSON) => void;
 
   constructor(params: {
@@ -72,6 +78,7 @@ export class SakanMqttSync {
     onStatusChange: (status: MqttConnectionStatus) => void;
     onLockStatusChange?: (locked: boolean) => void;
     onDeliveryStatusChange?: (enabled: boolean, fee: number) => void;
+    onSyrianMenuStatusChange?: (enabled: boolean) => void;
     onPushSubscriptionReceived?: (deviceId: string, sub: PushSubscriptionJSON) => void;
   }) {
     this.roomCode = params.roomCode || DEFAULT_ROOM_CODE;
@@ -79,6 +86,7 @@ export class SakanMqttSync {
     this.onStatusChange = params.onStatusChange;
     this.onLockStatusChange = params.onLockStatusChange;
     this.onDeliveryStatusChange = params.onDeliveryStatusChange;
+    this.onSyrianMenuStatusChange = params.onSyrianMenuStatusChange;
     this.onPushSubscriptionReceived = params.onPushSubscriptionReceived;
   }
 
@@ -108,6 +116,7 @@ export class SakanMqttSync {
             getOrdersWildcardTopic(this.roomCode),
             getLockStatusTopic(this.roomCode),
             getDeliveryStatusTopic(this.roomCode),
+            getSyrianMenuStatusTopic(this.roomCode),
             getPushSubsWildcardTopic(this.roomCode),
           ],
           { qos: 1 }
@@ -161,6 +170,21 @@ export class SakanMqttSync {
             this.onDeliveryStatusChange?.(enabled, fee);
           } catch {
             // ignore
+          }
+          return;
+        }
+
+        const syrianMenuTopic = getSyrianMenuStatusTopic(this.roomCode);
+        if (topic === syrianMenuTopic) {
+          if (!payloadStr) {
+            this.onSyrianMenuStatusChange?.(false);
+            return;
+          }
+          try {
+            const parsed = JSON.parse(payloadStr) as { enabled?: boolean };
+            this.onSyrianMenuStatusChange?.(Boolean(parsed?.enabled));
+          } catch {
+            this.onSyrianMenuStatusChange?.(payloadStr === 'true');
           }
           return;
         }
@@ -244,6 +268,19 @@ export class SakanMqttSync {
       JSON.stringify({
         enabled,
         fee: Math.max(0, Math.round((Number(fee) || 0) * 100) / 100),
+        updatedAt: new Date().toISOString(),
+      }),
+      { retain: true, qos: 1 }
+    );
+  }
+
+  public publishSyrianMenuStatus(enabled: boolean): void {
+    if (!this.client) return;
+    const topic = getSyrianMenuStatusTopic(this.roomCode);
+    this.client.publish(
+      topic,
+      JSON.stringify({
+        enabled: Boolean(enabled),
         updatedAt: new Date().toISOString(),
       }),
       { retain: true, qos: 1 }

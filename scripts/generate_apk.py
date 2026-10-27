@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import zlib
 
-APP_URL_DEFAULT = "https://ais-pre-mbmog7cusltxxh5jkl3cui-804213419948.europe-west2.run.app/?source=pwa&mode=student"
+APP_URL_DEFAULT = os.environ.get("APP_URL", "/?source=pwa&mode=student")
 
 
 # ============================================================================

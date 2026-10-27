@@ -682,7 +682,7 @@
       e.preventDefault();
       const val = (document.getElementById('master-pass-input').value || '').trim();
       const err = document.getElementById('master-pass-error');
-      if (val === '0902' || val === '13072009') {
+      if (val === '0902') {
         isMasterUnlocked = true;
         err.classList.add('hidden');
         renderAll();

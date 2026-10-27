@@ -1,5 +1,6 @@
 import express from 'express';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import webpush from 'web-push';
@@ -21,10 +22,11 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DATA_DIR = path.join(__dirname, 'data');
+const DATA_DIR = path.join(os.tmpdir(), 'sakan-orders-runtime');
 const ORDERS_FILE = path.join(DATA_DIR, 'orders.json');
 const LOCK_FILE = path.join(DATA_DIR, 'lock.json');
 const DELIVERY_FILE = path.join(DATA_DIR, 'delivery.json');
+const SYRIAN_MENU_FILE = path.join(DATA_DIR, 'syrian-menu.json');
 const VAPID_FILE = path.join(DATA_DIR, 'vapid.json');
 const SUBSCRIPTIONS_FILE = path.join(DATA_DIR, 'push-subscriptions.json');
 
@@ -103,19 +105,41 @@ function savePersistedDeliveryState(enabled: boolean, fee: number): void {
   }
 }
 
+function loadPersistedSyrianMenuState(): boolean {
+  try {
+    if (fs.existsSync(SYRIAN_MENU_FILE)) {
+      const raw = fs.readFileSync(SYRIAN_MENU_FILE, 'utf8');
+      const parsed = JSON.parse(raw);
+      return Boolean(parsed?.enabled);
+    }
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
+function savePersistedSyrianMenuState(enabled: boolean): void {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(
+      SYRIAN_MENU_FILE,
+      JSON.stringify({ enabled: Boolean(enabled) }, null, 2),
+      'utf8'
+    );
+  } catch {
+    // ignore
+  }
+}
+
 let serverOrders: RoommateOrderItem[] = loadPersistedOrders();
 let isOrdersLocked: boolean = loadPersistedLockState();
 const initialDelivery = loadPersistedDeliveryState();
 let isDeliveryEnabled: boolean = initialDelivery.enabled;
 let deliveryFee: number = initialDelivery.fee;
+let isSyrianMenuEnabled: boolean = loadPersistedSyrianMenuState();
 const sseClients = new Set<express.Response>();
 
 function loadOrGenerateVapidKeys(): { publicKey: string; privateKey: string } {
-  const envPublic = (process.env.VAPID_PUBLIC_KEY || '').trim();
-  const envPrivate = (process.env.VAPID_PRIVATE_KEY || '').trim();
-  if (envPublic && envPrivate) {
-    return { publicKey: envPublic, privateKey: envPrivate };
-  }
   try {
     if (fs.existsSync(VAPID_FILE)) {
       const raw = fs.readFileSync(VAPID_FILE, 'utf8');
@@ -140,7 +164,7 @@ function loadOrGenerateVapidKeys(): { publicKey: string; privateKey: string } {
 const vapidKeys = loadOrGenerateVapidKeys();
 try {
   webpush.setVapidDetails(
-    'mailto:stem.elarish.sakan@example.com',
+    'https://localhost',
     vapidKeys.publicKey,
     vapidKeys.privateKey
   );
@@ -233,13 +257,18 @@ async function broadcastWebPushLockNotification(
 }
 
 function broadcastOrdersUpdate(
-  eventType: 'orders:updated' | 'lock:changed' | 'delivery:changed' = 'orders:updated'
+  eventType:
+    | 'orders:updated'
+    | 'lock:changed'
+    | 'delivery:changed'
+    | 'syrian_menu:changed' = 'orders:updated'
 ) {
   const payload = `data: ${JSON.stringify({
     type: eventType,
     isOrdersLocked,
     isDeliveryEnabled,
     deliveryFee,
+    isSyrianMenuEnabled,
     timestamp: Date.now(),
   })}\n\n`;
   for (const client of sseClients) {
@@ -268,6 +297,7 @@ async function startServer() {
         isOrdersLocked,
         isDeliveryEnabled,
         deliveryFee,
+        isSyrianMenuEnabled,
       })}\n\n`
     );
     sseClients.add(res);
@@ -295,6 +325,7 @@ async function startServer() {
         isOrdersLocked,
         isDeliveryEnabled,
         deliveryFee,
+        isSyrianMenuEnabled,
       });
       return;
     }
@@ -306,6 +337,7 @@ async function startServer() {
         isOrdersLocked,
         isDeliveryEnabled,
         deliveryFee,
+        isSyrianMenuEnabled,
       });
       return;
     }
@@ -318,6 +350,7 @@ async function startServer() {
       isOrdersLocked,
       isDeliveryEnabled,
       deliveryFee,
+      isSyrianMenuEnabled,
     });
   });
 
@@ -335,17 +368,25 @@ async function startServer() {
         return;
       }
 
-      const validation = validateOrderItemInput({
-        roommateName: String(body.roommateName || ''),
-        roomNumber: String(body.roomNumber || ''),
-        itemName: String(body.itemName || ''),
-        category: body.category === 'pharmacy' || body.category === 'supermarket' || body.category === 'other' ? body.category : 'snacks',
-        quantity: Number(body.quantity) || 1,
-        unitPrice: Number(body.unitPrice) || 15,
-        paymentMethod: body.paymentMethod === 'wallet' ? 'wallet' : 'cash',
-        cashPaidAmount: Number(body.cashPaidAmount) || 0,
-        notes: String(body.notes || ''),
-      });
+      const validation = validateOrderItemInput(
+        {
+          roommateName: String(body.roommateName || ''),
+          roomNumber: String(body.roomNumber || ''),
+          itemName: String(body.itemName || ''),
+          category:
+            body.category === 'pharmacy' ||
+            body.category === 'supermarket' ||
+            body.category === 'other'
+              ? body.category
+              : 'snacks',
+          quantity: Number(body.quantity) || 1,
+          unitPrice: Number(body.unitPrice) || 15,
+          paymentMethod: body.paymentMethod === 'wallet' ? 'wallet' : 'cash',
+          cashPaidAmount: Number(body.cashPaidAmount) || 0,
+          notes: String(body.notes || ''),
+        },
+        { isSyrianMenuEnabled }
+      );
 
       if (!validation.valid || !validation.sanitized) {
         res.status(400).json({ error: validation.error || 'بيانات الطلب غير صالحة.' });
@@ -792,6 +833,21 @@ async function startServer() {
     res.json({ ok: true, isDeliveryEnabled, deliveryFee });
   });
 
+  // POST /api/orders/syrian-menu -> Supervisor enables/disables Syrian Sandwiches menu for students
+  app.post('/api/orders/syrian-menu', (req, res) => {
+    const passcode = String(req.body?.passcode || req.headers['x-master-passcode'] || '').trim();
+    if (passcode !== MASTER_PASSCODE) {
+      res.status(403).json({ error: 'غير مصرح' });
+      return;
+    }
+    if (typeof req.body?.enabled === 'boolean') {
+      isSyrianMenuEnabled = req.body.enabled;
+    }
+    savePersistedSyrianMenuState(isSyrianMenuEnabled);
+    broadcastOrdersUpdate('syrian_menu:changed');
+    res.json({ ok: true, isSyrianMenuEnabled });
+  });
+
   // POST /api/orders/clear -> Master clears all orders for a new round
   app.post('/api/orders/clear', (req, res) => {
     const passcode = String(req.body?.passcode || req.headers['x-master-passcode'] || '').trim();
@@ -875,9 +931,7 @@ async function startServer() {
   }
 
   const PORT = Number(process.env.PORT) || 3000;
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-  });
+  app.listen(PORT);
 }
 
 startServer();

@@ -1,6 +1,7 @@
 node_modules/
 build/
 dist/
+dev-dist/
 coverage/
 .DS_Store
 *.log
@@ -9,4 +10,16 @@ coverage/
 .env.*
 !.env.example
 firebase-applet-config.json
-data/vapid.json
+firebase-blueprint.json
+firestore.rules
+DRAFT_firestore.rules
+.firebase/
+data/
+*.db
+*.sqlite
+*.sqlite3
+*vapid*.json
+*subscriptions*.json
+*.pem
+*.key
+*.keystore

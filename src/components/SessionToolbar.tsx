@@ -1,13 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import type { SessionFinancialSummary } from '../types/orders';
-import type { User } from '../lib/firebase';
 import { toEnglishDigits } from '../utils/emailOtpService';
 
 interface SessionToolbarProps {
   financials: SessionFinancialSummary;
-  currentUser: User | null;
-  onSignIn: () => void;
-  onSignOut: () => void;
   onClearAllOrders: () => void;
   onCopyMasterSummary: () => void;
   copiedSummaryRecently: boolean;
@@ -16,6 +12,8 @@ interface SessionToolbarProps {
   isDeliveryEnabled: boolean;
   deliveryFee: number;
   onUpdateDeliverySettings: (enabled: boolean, fee: number) => void;
+  isSyrianMenuEnabled?: boolean;
+  onToggleSyrianMenu?: () => void;
 }
 
 export const SessionToolbar: React.FC<SessionToolbarProps> = ({
@@ -28,6 +26,8 @@ export const SessionToolbar: React.FC<SessionToolbarProps> = ({
   isDeliveryEnabled,
   deliveryFee,
   onUpdateDeliverySettings,
+  isSyrianMenuEnabled = false,
+  onToggleSyrianMenu,
 }) => {
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [feeInput, setFeeInput] = useState<string>(String(deliveryFee || 5));
@@ -86,6 +86,17 @@ export const SessionToolbar: React.FC<SessionToolbarProps> = ({
                   ? `الدليفري مفعّل (${deliveryFee} ج.م)`
                   : 'الدليفري مطفي'}
               </span>
+              <span
+                className={`px-2.5 py-0.5 rounded-lg text-xs font-bold ${
+                  isSyrianMenuEnabled
+                    ? 'bg-amber-200 text-amber-950 border border-amber-300'
+                    : 'bg-slate-100 text-slate-600 border border-slate-200'
+                }`}
+              >
+                {isSyrianMenuEnabled
+                  ? 'سندوتشات سوري مفعّل 🌯'
+                  : 'سندوتشات سوري مطفي'}
+              </span>
             </div>
           </div>
 
@@ -113,6 +124,19 @@ export const SessionToolbar: React.FC<SessionToolbarProps> = ({
               }`}
             >
               {isDeliveryEnabled ? 'إيقاف الدليفري 🛵' : 'تفعيل الدليفري 🛵'}
+            </button>
+
+            <button
+              id="supervisor-syrian-menu-toggle-btn"
+              type="button"
+              onClick={onToggleSyrianMenu}
+              className={`min-h-[38px] px-3.5 py-1.5 text-xs font-extrabold rounded-xl transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                isSyrianMenuEnabled
+                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-xs'
+                  : 'bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-400/50'
+              }`}
+            >
+              {isSyrianMenuEnabled ? 'إيقاف سندوتشات سوري 🌯' : 'سندوتشات سوري 🌯'}
             </button>
 
             <button
@@ -207,6 +231,42 @@ export const SessionToolbar: React.FC<SessionToolbarProps> = ({
               />
               <span className="text-xs font-bold text-slate-600">ج.م</span>
             </div>
+          </div>
+        </div>
+
+        {/* Supervisor Syrian Sandwiches Control Box (خانة سندوتشات سوري للطلاب) */}
+        <div
+          id="supervisor-syrian-menu-box"
+          className={`p-3 rounded-xl border flex flex-wrap items-center justify-between gap-3 transition-colors ${
+            isSyrianMenuEnabled
+              ? 'bg-amber-50 border-amber-300'
+              : 'bg-slate-50 border-slate-200'
+          }`}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-extrabold text-slate-900">
+              🌯 سندوتشات سوري:
+            </span>
+            <button
+              id="supervisor-syrian-menu-card-btn"
+              type="button"
+              onClick={onToggleSyrianMenu}
+              className={`min-h-[34px] px-3.5 py-1 text-xs font-extrabold rounded-lg transition-colors cursor-pointer ${
+                isSyrianMenuEnabled
+                  ? 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-xs'
+                  : 'bg-slate-800 text-amber-300 border border-amber-400/50 hover:bg-slate-700'
+              }`}
+            >
+              {isSyrianMenuEnabled
+                ? 'سندوتشات سوري مفعّل ✅ (اضغط لإيقافه)'
+                : 'تفعيل سندوتشات سوري (يظهر للطلاب أصناف السوري فقط)'}
+            </button>
+          </div>
+
+          <div className="text-[11px] font-semibold text-slate-600">
+            {isSyrianMenuEnabled
+              ? 'يظهر للطلاب الآن فقط: بطاطس / بطاطس موتزريلا / بطاطس باكت / تومية / صوص تكساس / صوص شيدر'
+              : 'عند تفعيل هذه الخانة يظهر للطلاب منيو السندوتشات السوري فقط للطلب'}
           </div>
         </div>
 
