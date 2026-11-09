@@ -1,6 +1,6 @@
 // Full PWA Offline Caching + Web Push Service Worker for Sakan Orders
 
-const CACHE_NAME = 'sakan-pwa-ui-cache-v2';
+const CACHE_NAME = 'sakan-pwa-ui-cache-v12';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
@@ -42,14 +42,21 @@ self.addEventListener('activate', function (event) {
   );
 });
 
-// Cache-first / Stale-while-revalidate for UI shell, scripts, styles, fonts, and images so the app opens fast on weak internet
+// Network-First for all app scripts, styles, and pages so updates always appear immediately; fallback to cache only when offline
 self.addEventListener('fetch', function (event) {
   const req = event.request;
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
-  // Never cache real-time API or SSE streams
-  if (url.pathname.startsWith('/api/')) return;
+  // Never cache real-time API, SSE streams, or Vite source modules
+  if (
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/src/') ||
+    url.pathname.startsWith('/node_modules/') ||
+    url.pathname.startsWith('/@')
+  ) {
+    return;
+  }
 
   // Navigation requests: Network first, fallback to cached /index.html
   if (req.mode === 'navigate') {
@@ -71,30 +78,26 @@ self.addEventListener('fetch', function (event) {
     return;
   }
 
-  // Static UI assets (JS, CSS, fonts, images, sounds): Stale-While-Revalidate
+  // Static UI assets: Network-First with offline cache fallback
   if (
     url.origin === self.location.origin ||
     url.hostname.includes('fonts.googleapis.com') ||
     url.hostname.includes('fonts.gstatic.com')
   ) {
     event.respondWith(
-      caches.match(req).then(function (cachedRes) {
-        const networkFetch = fetch(req)
-          .then(function (networkRes) {
-            if (networkRes && networkRes.status === 200) {
-              const clone = networkRes.clone();
-              caches.open(CACHE_NAME).then(function (cache) {
-                cache.put(req, clone);
-              });
-            }
-            return networkRes;
-          })
-          .catch(function () {
-            return cachedRes;
-          });
-
-        return cachedRes || networkFetch;
-      })
+      fetch(req)
+        .then(function (networkRes) {
+          if (networkRes && networkRes.status === 200) {
+            const clone = networkRes.clone();
+            caches.open(CACHE_NAME).then(function (cache) {
+              cache.put(req, clone);
+            });
+          }
+          return networkRes;
+        })
+        .catch(function () {
+          return caches.match(req);
+        })
     );
   }
 });

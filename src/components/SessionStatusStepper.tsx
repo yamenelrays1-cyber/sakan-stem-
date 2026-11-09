@@ -62,43 +62,24 @@ export const SessionStatusStepper: React.FC<SessionStatusStepperProps> = ({
                 {status === 'arrived' && 'وصل'}
               </span>
             </span>
-            {isFirebaseConnected ? (
-              <span
-                title="متصل بقاعدة بيانات Firebase Firestore لحظياً بدون ريفريش (onSnapshot)"
-                className="px-2.5 py-1 rounded-xl text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1"
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>Firestore متصل لحظياً</span>
-              </span>
-            ) : (
-              onConnectFirebase && (
-                <button
-                  type="button"
-                  onClick={onConnectFirebase}
-                  className="min-h-[32px] px-2.5 py-1 rounded-xl text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 transition-colors cursor-pointer inline-flex items-center gap-1"
-                >
-                  <span>☁️ تفعيل مزامنة Firebase</span>
-                </button>
-              )
-            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              id="open-order-summary-modal-btn"
-              type="button"
-              onClick={onOpenSummaryModal}
-              className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-extrabold transition-colors cursor-pointer inline-flex items-center gap-1.5 shadow-xs"
-            >
-              <span>📋 ملخص الطلب</span>
-              {totalItemsCount > 0 && (
-                <span className="px-1.5 py-0.5 rounded-md bg-slate-950/15 text-[11px] font-mono tabular-nums">
-                  {totalItemsCount}
-                </span>
-              )}
-            </button>
+          {isSupervisor && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                id="open-order-summary-modal-btn"
+                type="button"
+                onClick={onOpenSummaryModal}
+                className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-extrabold transition-colors cursor-pointer inline-flex items-center gap-1.5 shadow-xs"
+              >
+                <span>📋 ملخص الطلب</span>
+                {totalItemsCount > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-md bg-slate-950/15 text-[11px] font-mono tabular-nums">
+                    {totalItemsCount}
+                  </span>
+                )}
+              </button>
 
-            {isSupervisor && (
               <button
                 id="supervisor-advance-status-btn"
                 type="button"
@@ -107,8 +88,8 @@ export const SessionStatusStepper: React.FC<SessionStatusStepperProps> = ({
               >
                 {getNextSessionStatusActionLabelAr(status)}
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Simple Progress Bar & 3 Stages (مفتوح -> اتبعت -> وصل) */}

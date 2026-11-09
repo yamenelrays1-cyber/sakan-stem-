@@ -1752,12 +1752,14 @@ export default function App() {
         </div>
       )}
 
-      {/* Order Summary Modal (ملخص الطلب: 3 شاورما، 2 كولا + انسخ + ابعت واتساب) */}
-      <OrderSummaryModal
-        isOpen={isSummaryModalOpen}
-        onClose={() => setIsSummaryModalOpen(false)}
-        orders={combinedAllOrders}
-      />
+      {/* Order Summary Modal (ملخص الطلب: للمشرف فقط) */}
+      {edition === 'master' && isMasterUnlocked && (
+        <OrderSummaryModal
+          isOpen={isSummaryModalOpen}
+          onClose={() => setIsSummaryModalOpen(false)}
+          orders={combinedAllOrders}
+        />
+      )}
 
       {/* PWA / APK Installation Modal */}
       <PWAInstallModal

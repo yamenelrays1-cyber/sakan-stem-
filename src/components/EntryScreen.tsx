@@ -41,7 +41,7 @@ interface EntryScreenProps {
   initialName: string;
   initialRoom: DormRoom | '';
   initialEmail?: string;
-  onSaveStudentProfileAndEnter: (name: string, room: DormRoom, email?: string) => void;
+  onSaveStudentProfileAndEnter: (name: string, room: DormRoom, email: string) => void;
   onEnterEdition: (edition: AppEdition) => void;
 }
 
@@ -80,35 +80,31 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     window.setTimeout(() => setIsSwinging(false), 750);
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleEnterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      const profileCheck = validateStudentProfileInput(name, room);
-      if (!profileCheck.valid) {
-        setError(profileCheck.errorAr || 'من فضلك اكتب الاسم ثنائي ورقم الغرفة بشكل صحيح.');
-        return;
-      }
 
-      const cleanName = sanitizeTextInput(profileCheck.sanitizedName, 60);
-      const cleanRoom = (normalizeDormRoomInput(profileCheck.sanitizedRoom) ||
-        profileCheck.sanitizedRoom) as DormRoom;
-      const syntheticEmail = 'student@sakan.local';
-
-      try {
-        localStorage.setItem(SAVED_STUDENT_NAME_KEY, cleanName);
-        localStorage.setItem(SAVED_STUDENT_ROOM_KEY, cleanRoom);
-        localStorage.setItem(SAVED_STUDENT_EMAIL_KEY, syntheticEmail);
-        const verifiedSession = createVerifiedSessionPayload(syntheticEmail, cleanName, cleanRoom);
-        localStorage.setItem(VERIFIED_SESSION_STORAGE_KEY, JSON.stringify(verifiedSession));
-      } catch {
-        // ignore storage quota errors
-      }
-
-      setError(null);
-      onSaveStudentProfileAndEnter(cleanName, cleanRoom, syntheticEmail);
-    } catch {
-      setError('حدث خطأ أثناء تسجيل الدخول — يرجى المحاولة مرة أخرى.');
+    const profileCheck = validateStudentProfileInput(name, room);
+    if (!profileCheck.valid) {
+      setError(profileCheck.errorAr || 'من فضلك اكتب الاسم ثنائي ورقم الغرفة بشكل صحيح.');
+      return;
     }
+
+    const cleanName = sanitizeTextInput(profileCheck.sanitizedName, 60);
+    const cleanRoom = normalizeDormRoomInput(profileCheck.sanitizedRoom) as DormRoom;
+    const defaultEmail = 'student@sakan.local';
+
+    try {
+      localStorage.setItem(SAVED_STUDENT_NAME_KEY, cleanName);
+      localStorage.setItem(SAVED_STUDENT_ROOM_KEY, cleanRoom);
+      localStorage.setItem(SAVED_STUDENT_EMAIL_KEY, defaultEmail);
+      const verifiedSession = createVerifiedSessionPayload(defaultEmail, cleanName, cleanRoom);
+      localStorage.setItem(VERIFIED_SESSION_STORAGE_KEY, JSON.stringify(verifiedSession));
+    } catch {
+      // ignore storage quota errors
+    }
+
+    setError(null);
+    onSaveStudentProfileAndEnter(cleanName, cleanRoom, defaultEmail);
   };
 
   const particles = [
@@ -306,7 +302,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           </motion.p>
         </motion.div>
 
-        {/* Auth Card underneath the lamp (Name + Room ONLY) */}
+        {/* Auth Card underneath the lamp (Name + Room only) */}
         <motion.div
           initial={false}
           animate={{
@@ -340,7 +336,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
               </h1>
             </div>
 
-            <form onSubmit={handleLoginSubmit} className="space-y-3.5" noValidate>
+            <form onSubmit={handleEnterSubmit} className="space-y-3" noValidate>
               <div dir="rtl">
                 <input
                   id="entry-login-name"
