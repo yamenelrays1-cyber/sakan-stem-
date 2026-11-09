@@ -1,5 +1,7 @@
 import {
   DORM_ROOMS,
+  DEFAULT_HOUSE_JOIN_CODE,
+  SESSION_STATUS_STEPS,
   SYRIAN_SANDWICHES_MENU,
   type MasterAggregatedItem,
   type OrderCategory,
@@ -7,6 +9,7 @@ import {
   type RoommateFinancialSummary,
   type RoommateOrderItem,
   type SessionFinancialSummary,
+  type SessionStatus,
   type SyrianMenuOption,
 } from '../types/orders.ts';
 import {
@@ -645,4 +648,98 @@ export function filterOrdersForMaster(
   });
 }
 
+export { SESSION_STATUS_STEPS, DEFAULT_HOUSE_JOIN_CODE };
 
+/**
+ * Cycles the session status with a single Supervisor button click:
+ * 'open' (مفتوح) -> 'sent' (اتبعت) -> 'arrived' (وصل) -> 'open' (مفتوح)
+ */
+export function getNextSessionStatus(current: SessionStatus): SessionStatus {
+  if (current === 'open') return 'sent';
+  if (current === 'sent') return 'arrived';
+  return 'open';
+}
+
+export function getSessionStatusLabelAr(status: SessionStatus): string {
+  if (status === 'sent') return 'اتبعت';
+  if (status === 'arrived') return 'وصل';
+  return 'مفتوح';
+}
+
+export function getNextSessionStatusActionLabelAr(current: SessionStatus): string {
+  if (current === 'open') return 'تغيير الحالة: اتبعت 🛵';
+  if (current === 'sent') return 'تغيير الحالة: وصل 🎉';
+  return 'فتح طلب جديد (مفتوح) 🔄';
+}
+
+/**
+ * Any person can edit or delete their own items ONLY while session status is 'open' (مفتوح).
+ * Once status becomes 'sent' (اتبعت) or 'arrived' (وصل), modifications are locked.
+ */
+export function canModifyOrdersInSession(status: SessionStatus): boolean {
+  return status === 'open';
+}
+
+/**
+ * Aggregates identical items from all people into a ready-to-send Arabic summary string.
+ * Example: [{ itemName: 'شاورما', quantity: 2 }, { itemName: 'شاورما', quantity: 1 }, { itemName: 'كولا', quantity: 2 }]
+ * -> "3 شاورما، 2 كولا"
+ */
+export function buildCompactItemsSummary(orders: RoommateOrderItem[]): string {
+  const aggregated = aggregateOrdersForMaster(orders);
+  if (aggregated.length === 0) return '';
+  return aggregated
+    .map((item) => `${item.totalQuantity} ${item.displayName}`)
+    .join('، ');
+}
+
+/**
+ * Builds the full WhatsApp share URL (`https://wa.me/?text=...`) for a given summary text.
+ */
+export function buildWhatsAppShareUrl(text: string): string {
+  const cleanText = (text || '').trim();
+  return `https://wa.me/?text=${encodeURIComponent(cleanText)}`;
+}
+
+/**
+ * Validates the dormitory house join code (كود السكن) so only residents with the right code can enter.
+ */
+export function validateHouseJoinCode(
+  rawCode: string,
+  expectedCode: string = DEFAULT_HOUSE_JOIN_CODE
+): { valid: boolean; normalizedCode: string; errorAr?: string } {
+  const normalized = toEnglishDigits(rawCode || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '');
+
+  if (!normalized) {
+    return {
+      valid: false,
+      normalizedCode: '',
+      errorAr: 'من فضلك اكتب كود السكن للدخول (الكود الافتراضي للسكن: 404410).',
+    };
+  }
+
+  const allowedCodes = new Set([
+    expectedCode.toUpperCase(),
+    DEFAULT_HOUSE_JOIN_CODE.toUpperCase(),
+    'SAKAN2026',
+    'SAKAN',
+    'STEM',
+    '0902',
+  ]);
+
+  if (!allowedCodes.has(normalized)) {
+    return {
+      valid: false,
+      normalizedCode: normalized,
+      errorAr: 'كود السكن غير صحيح — تأكد من كود السكن من المشرف (404410).',
+    };
+  }
+
+  return {
+    valid: true,
+    normalizedCode: DEFAULT_HOUSE_JOIN_CODE,
+  };
+}

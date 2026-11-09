@@ -1,6 +1,31 @@
 export type OrderCategory = 'snacks' | 'meals' | 'drinks' | 'groceries' | 'other';
 export type PaymentMethod = 'cash' | 'instapay' | 'wallet';
-export type SessionStatus = 'open' | 'ordering' | 'completed';
+export type SessionStatus = 'open' | 'sent' | 'arrived';
+
+export const DEFAULT_HOUSE_JOIN_CODE = '404410';
+export const SAVED_HOUSE_JOIN_CODE_KEY = 'sakan_saved_house_join_code_v1';
+
+export const SESSION_STATUS_STEPS: readonly {
+  key: SessionStatus;
+  labelAr: string;
+  shortDescAr: string;
+}[] = [
+  {
+    key: 'open',
+    labelAr: 'مفتوح',
+    shortDescAr: 'متاح إضافة وتعديل وحذف الطلبات',
+  },
+  {
+    key: 'sent',
+    labelAr: 'اتبعت',
+    shortDescAr: 'تم إرسال الطلب للمطعم (التعديل مقفول)',
+  },
+  {
+    key: 'arrived',
+    labelAr: 'وصل',
+    shortDescAr: 'الطلب وصل السكن — تفضل بالاستلام 🎉',
+  },
+] as const;
 
 export const DORM_ROOMS = [
   'غرفة 404',

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import webpush from 'web-push';
-import type { RoommateOrderItem } from './src/types/orders.ts';
+import type { RoommateOrderItem, SessionStatus } from './src/types/orders.ts';
 import {
   MASTER_PASSCODE,
   normalizeArabicItemName,
@@ -25,6 +25,7 @@ const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(os.tmpdir(), 'sakan-orders-runtime');
 const ORDERS_FILE = path.join(DATA_DIR, 'orders.json');
 const LOCK_FILE = path.join(DATA_DIR, 'lock.json');
+const SESSION_STATUS_FILE = path.join(DATA_DIR, 'session-status.json');
 const DELIVERY_FILE = path.join(DATA_DIR, 'delivery.json');
 const SYRIAN_MENU_FILE = path.join(DATA_DIR, 'syrian-menu.json');
 const VAPID_FILE = path.join(DATA_DIR, 'vapid.json');
@@ -131,8 +132,37 @@ function savePersistedSyrianMenuState(enabled: boolean): void {
   }
 }
 
+function loadPersistedSessionStatus(): SessionStatus {
+  try {
+    if (fs.existsSync(SESSION_STATUS_FILE)) {
+      const raw = fs.readFileSync(SESSION_STATUS_FILE, 'utf8');
+      const parsed = JSON.parse(raw);
+      if (parsed?.status === 'sent' || parsed?.status === 'arrived') {
+        return parsed.status;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return 'open';
+}
+
+function savePersistedSessionStatus(status: SessionStatus): void {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(
+      SESSION_STATUS_FILE,
+      JSON.stringify({ status }, null, 2),
+      'utf8'
+    );
+  } catch {
+    // ignore
+  }
+}
+
 let serverOrders: RoommateOrderItem[] = loadPersistedOrders();
-let isOrdersLocked: boolean = loadPersistedLockState();
+let sessionStatus: SessionStatus = loadPersistedSessionStatus();
+let isOrdersLocked: boolean = sessionStatus !== 'open' ? true : loadPersistedLockState();
 const initialDelivery = loadPersistedDeliveryState();
 let isDeliveryEnabled: boolean = initialDelivery.enabled;
 let deliveryFee: number = initialDelivery.fee;
@@ -217,17 +247,29 @@ function mergeIncomingSubscriptions(rawList: unknown[]): void {
 
 async function broadcastWebPushLockNotification(
   locked: boolean,
-  excludeEndpoint?: string
+  excludeEndpoint?: string,
+  customSessionStatus?: SessionStatus
 ): Promise<void> {
   if (pushSubscriptions.length === 0) return;
+  const activeStatus = customSessionStatus || (locked ? 'sent' : 'open');
+  const title =
+    activeStatus === 'arrived'
+      ? '🎉 الطلب وصل السكن دلوقتي!'
+      : activeStatus === 'open'
+        ? '🟢 تم فتح طلب جديد في السكن!'
+        : '🛵 الطلب اتبعت للمطعم (تم قفل التعديل)';
+  const body =
+    activeStatus === 'arrived'
+      ? 'الأوردر وصل السكن — انزل استلم طلبك من المشرف!'
+      : activeStatus === 'open'
+        ? 'المشرف فتح جلسة طلب جديدة — تقدر تسجل طلبك فوراً!'
+        : 'المشرف بعت الطلب للمطعم وقفل التعديل والإضافة.';
+
   const payload = JSON.stringify({
     locked,
-    title: locked
-      ? '🔒 تنبيه من المشرف: تم قفل الطلبات'
-      : '🔓 تنبيه من المشرف: تم فتح الطلبات الآن',
-    body: locked
-      ? 'المشرف قفل استقبال الطلبات الحالية.'
-      : 'المشرف فتح الطلبات دلوقتي — تقدر تسجل طلبك فوراً!',
+    sessionStatus: activeStatus,
+    title,
+    body,
     timestamp: Date.now(),
   });
 
@@ -260,11 +302,13 @@ function broadcastOrdersUpdate(
   eventType:
     | 'orders:updated'
     | 'lock:changed'
+    | 'session_status:changed'
     | 'delivery:changed'
     | 'syrian_menu:changed' = 'orders:updated'
 ) {
   const payload = `data: ${JSON.stringify({
     type: eventType,
+    sessionStatus,
     isOrdersLocked,
     isDeliveryEnabled,
     deliveryFee,
@@ -294,6 +338,7 @@ async function startServer() {
     res.write(
       `data: ${JSON.stringify({
         type: 'connected',
+        sessionStatus,
         isOrdersLocked,
         isDeliveryEnabled,
         deliveryFee,
@@ -322,6 +367,7 @@ async function startServer() {
       }
       res.json({
         orders: serverOrders,
+        sessionStatus,
         isOrdersLocked,
         isDeliveryEnabled,
         deliveryFee,
@@ -334,6 +380,7 @@ async function startServer() {
     if (!deviceId) {
       res.json({
         orders: [],
+        sessionStatus,
         isOrdersLocked,
         isDeliveryEnabled,
         deliveryFee,
@@ -347,6 +394,8 @@ async function startServer() {
     );
     res.json({
       orders: myDeviceOrders,
+      allSessionItems: serverOrders,
+      sessionStatus,
       isOrdersLocked,
       isDeliveryEnabled,
       deliveryFee,
@@ -433,6 +482,13 @@ async function startServer() {
     const roommateName = sanitizeTextInput(String(req.body?.roommateName || ''), 60);
     const roomNumber = sanitizeTextInput(String(req.body?.roomNumber || ''), 30);
     const passcode = String(req.body?.passcode || req.headers['x-master-passcode'] || '').trim();
+    const isSupervisor = passcode === MASTER_PASSCODE;
+
+    if (!isSupervisor && (isOrdersLocked || sessionStatus !== 'open')) {
+      res.status(403).json({ error: 'تم إرسال الطلب وتقفيل التعديل — لا يمكن تعديل الأصناف بعد مرحلة "اتبعت".' });
+      return;
+    }
+
     const target = serverOrders.find((o) => o.id === id);
 
     if (!target) {
@@ -444,7 +500,7 @@ async function startServer() {
       deviceId,
       name: roommateName || undefined,
       room: roomNumber || undefined,
-      isSupervisorUnlocked: passcode === MASTER_PASSCODE,
+      isSupervisorUnlocked: isSupervisor,
     });
     if (!isAuthorized) {
       res.status(403).json({ error: 'غير مسموح بتعديل طلب طالب آخر' });
@@ -593,6 +649,13 @@ async function startServer() {
     const roommateName = sanitizeTextInput(String(req.query.roommateName || req.body?.roommateName || ''), 60);
     const roomNumber = sanitizeTextInput(String(req.query.roomNumber || req.body?.roomNumber || ''), 30);
     const passcode = String(req.query.passcode || req.headers['x-master-passcode'] || '').trim();
+    const isSupervisor = passcode === MASTER_PASSCODE;
+
+    if (!isSupervisor && (isOrdersLocked || sessionStatus !== 'open')) {
+      res.status(403).json({ error: 'تم إرسال الطلب وتقفيل الحذف — لا يمكن حذف الأصناف بعد مرحلة "اتبعت".' });
+      return;
+    }
+
     const target = serverOrders.find((o) => o.id === id);
 
     if (!target) {
@@ -604,7 +667,7 @@ async function startServer() {
       deviceId,
       name: roommateName || undefined,
       room: roomNumber || undefined,
-      isSupervisorUnlocked: passcode === MASTER_PASSCODE,
+      isSupervisorUnlocked: isSupervisor,
     });
     if (!isAuthorized) {
       res.status(403).json({ error: 'غير مسموح بحذف طلب طالب آخر' });
@@ -806,10 +869,42 @@ async function startServer() {
     const excludeEndpoint =
       typeof req.body?.excludeEndpoint === 'string' ? req.body.excludeEndpoint : undefined;
     isOrdersLocked = Boolean(req.body?.locked);
+    sessionStatus = isOrdersLocked ? 'sent' : 'open';
     savePersistedLockState(isOrdersLocked);
+    savePersistedSessionStatus(sessionStatus);
     broadcastOrdersUpdate('lock:changed');
-    broadcastWebPushLockNotification(isOrdersLocked, excludeEndpoint).catch(() => {});
-    res.json({ ok: true, isOrdersLocked, notifiedCount: pushSubscriptions.length });
+    broadcastWebPushLockNotification(isOrdersLocked, excludeEndpoint, sessionStatus).catch(() => {});
+    res.json({ ok: true, isOrdersLocked, sessionStatus, notifiedCount: pushSubscriptions.length });
+  });
+
+  // POST /api/orders/session-status -> Supervisor changes session status ('open' | 'sent' | 'arrived')
+  app.post('/api/orders/session-status', (req, res) => {
+    const passcode = String(req.body?.passcode || req.headers['x-master-passcode'] || '').trim();
+    if (passcode !== MASTER_PASSCODE) {
+      res.status(403).json({ error: 'غير مصرح' });
+      return;
+    }
+    if (Array.isArray(req.body?.subscriptions)) {
+      mergeIncomingSubscriptions(req.body.subscriptions);
+    }
+    const excludeEndpoint =
+      typeof req.body?.excludeEndpoint === 'string' ? req.body.excludeEndpoint : undefined;
+    const rawStatus = String(req.body?.status || 'open');
+    const nextStatus: SessionStatus =
+      rawStatus === 'sent' || rawStatus === 'arrived' ? rawStatus : 'open';
+
+    sessionStatus = nextStatus;
+    isOrdersLocked = nextStatus !== 'open';
+    savePersistedSessionStatus(sessionStatus);
+    savePersistedLockState(isOrdersLocked);
+    broadcastOrdersUpdate('session_status:changed');
+    broadcastWebPushLockNotification(isOrdersLocked, excludeEndpoint, sessionStatus).catch(() => {});
+    res.json({
+      ok: true,
+      sessionStatus,
+      isOrdersLocked,
+      notifiedCount: pushSubscriptions.length,
+    });
   });
 
   // POST /api/orders/delivery -> Supervisor enables/disables delivery and sets delivery fee
@@ -856,11 +951,13 @@ async function startServer() {
       return;
     }
     serverOrders = [];
+    sessionStatus = 'open';
     isOrdersLocked = false;
     savePersistedOrders(serverOrders);
+    savePersistedSessionStatus('open');
     savePersistedLockState(false);
-    broadcastOrdersUpdate();
-    res.json({ ok: true });
+    broadcastOrdersUpdate('session_status:changed');
+    res.json({ ok: true, sessionStatus: 'open', isOrdersLocked: false });
   });
 
   // GET /api/download-apk and /stem-arish-orders.apk -> Direct download of the signed Android APK
@@ -902,7 +999,7 @@ async function startServer() {
   if (!isProd) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: false, watch: null },
+      server: { middlewareMode: true, hmr: false },
       appType: 'spa',
     });
     app.use(vite.middlewares);

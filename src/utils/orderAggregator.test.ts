@@ -501,3 +501,50 @@ test('when isSyrianMenuEnabled is true, validateOrderItemInput accepts only SYRI
   }
 });
 
+test('Session status lifecycle cycles open -> sent -> arrived -> open and locks student edits after open', async () => {
+  const {
+    getNextSessionStatus,
+    canModifyOrdersInSession,
+    getSessionStatusLabelAr,
+  } = await import('./orderAggregator.ts');
+
+  assert.equal(getNextSessionStatus('open'), 'sent');
+  assert.equal(getNextSessionStatus('sent'), 'arrived');
+  assert.equal(getNextSessionStatus('arrived'), 'open');
+
+  assert.equal(getSessionStatusLabelAr('open'), 'مفتوح');
+  assert.equal(getSessionStatusLabelAr('sent'), 'اتبعت');
+  assert.equal(getSessionStatusLabelAr('arrived'), 'وصل');
+
+  assert.equal(canModifyOrdersInSession('open'), true);
+  assert.equal(canModifyOrdersInSession('sent'), false);
+  assert.equal(canModifyOrdersInSession('arrived'), false);
+});
+
+test('buildCompactItemsSummary aggregates identical items into "3 شاورما، 2 كولا" format and buildWhatsAppShareUrl encodes wa.me URL', async () => {
+  const { buildCompactItemsSummary, buildWhatsAppShareUrl } = await import(
+    './orderAggregator.ts'
+  );
+
+  const items: RoommateOrderItem[] = [
+    createMockOrder({ id: 's1', itemName: 'شاورما', quantity: 2 }),
+    createMockOrder({ id: 's2', itemName: 'كولا', quantity: 2 }),
+    createMockOrder({ id: 's3', itemName: 'شاورما', quantity: 1 }),
+  ];
+
+  const summary = buildCompactItemsSummary(items);
+  assert.equal(summary, '3 شاورما، 2 كولا');
+
+  const waUrl = buildWhatsAppShareUrl(summary);
+  assert.equal(waUrl, `https://wa.me/?text=${encodeURIComponent('3 شاورما، 2 كولا')}`);
+});
+
+test('validateHouseJoinCode accepts only the valid house join code (404410)', async () => {
+  const { validateHouseJoinCode } = await import('./orderAggregator.ts');
+  assert.equal(validateHouseJoinCode('404410', '404410').valid, true);
+  assert.equal(validateHouseJoinCode(' 404410 ', '404410').valid, true);
+  assert.equal(validateHouseJoinCode('000000', '404410').valid, false);
+  assert.equal(validateHouseJoinCode('', '404410').valid, false);
+});
+
+

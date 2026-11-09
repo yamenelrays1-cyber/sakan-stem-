@@ -1,4 +1,4 @@
-import type { RoommateOrderItem } from '../types/orders';
+import type { RoommateOrderItem, SessionStatus } from '../types/orders';
 import { sanitizeTextInput } from '../utils/emailOtpService';
 
 export type MqttConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'offline';
@@ -52,6 +52,11 @@ export function getSyrianMenuStatusTopic(roomCode: string): string {
   return `sakan_app/${cleanRoom}/status/syrian_menu`;
 }
 
+export function getSessionStatusTopic(roomCode: string): string {
+  const cleanRoom = (roomCode || DEFAULT_ROOM_CODE).trim();
+  return `sakan_app/${cleanRoom}/status/session_status`;
+}
+
 export function getPushSubTopic(roomCode: string, deviceId: string): string {
   const cleanRoom = (roomCode || DEFAULT_ROOM_CODE).trim();
   return `sakan_app/${cleanRoom}/push_subs/${deviceId}`;
@@ -68,6 +73,7 @@ export class SakanMqttSync {
   private onOrderReceived: (orderId: string, order: RoommateOrderItem | null) => void;
   private onStatusChange: (status: MqttConnectionStatus) => void;
   private onLockStatusChange?: (locked: boolean) => void;
+  private onSessionStatusChange?: (status: SessionStatus) => void;
   private onDeliveryStatusChange?: (enabled: boolean, fee: number) => void;
   private onSyrianMenuStatusChange?: (enabled: boolean) => void;
   private onPushSubscriptionReceived?: (deviceId: string, sub: PushSubscriptionJSON) => void;
@@ -77,6 +83,7 @@ export class SakanMqttSync {
     onOrderReceived: (orderId: string, order: RoommateOrderItem | null) => void;
     onStatusChange: (status: MqttConnectionStatus) => void;
     onLockStatusChange?: (locked: boolean) => void;
+    onSessionStatusChange?: (status: SessionStatus) => void;
     onDeliveryStatusChange?: (enabled: boolean, fee: number) => void;
     onSyrianMenuStatusChange?: (enabled: boolean) => void;
     onPushSubscriptionReceived?: (deviceId: string, sub: PushSubscriptionJSON) => void;
@@ -85,6 +92,7 @@ export class SakanMqttSync {
     this.onOrderReceived = params.onOrderReceived;
     this.onStatusChange = params.onStatusChange;
     this.onLockStatusChange = params.onLockStatusChange;
+    this.onSessionStatusChange = params.onSessionStatusChange;
     this.onDeliveryStatusChange = params.onDeliveryStatusChange;
     this.onSyrianMenuStatusChange = params.onSyrianMenuStatusChange;
     this.onPushSubscriptionReceived = params.onPushSubscriptionReceived;
@@ -115,6 +123,7 @@ export class SakanMqttSync {
           [
             getOrdersWildcardTopic(this.roomCode),
             getLockStatusTopic(this.roomCode),
+            getSessionStatusTopic(this.roomCode),
             getDeliveryStatusTopic(this.roomCode),
             getSyrianMenuStatusTopic(this.roomCode),
             getPushSubsWildcardTopic(this.roomCode),
@@ -153,6 +162,26 @@ export class SakanMqttSync {
             this.onLockStatusChange?.(Boolean(parsed?.locked));
           } catch {
             this.onLockStatusChange?.(payloadStr === 'true');
+          }
+          return;
+        }
+
+        const sessionStatusTopic = getSessionStatusTopic(this.roomCode);
+        if (topic === sessionStatusTopic) {
+          if (!payloadStr) {
+            this.onSessionStatusChange?.('open');
+            return;
+          }
+          try {
+            const parsed = JSON.parse(payloadStr) as { status?: string };
+            const raw = parsed?.status;
+            const nextStatus: SessionStatus =
+              raw === 'sent' || raw === 'arrived' ? raw : 'open';
+            this.onSessionStatusChange?.(nextStatus);
+          } catch {
+            const nextStatus: SessionStatus =
+              payloadStr === 'sent' || payloadStr === 'arrived' ? payloadStr : 'open';
+            this.onSessionStatusChange?.(nextStatus);
           }
           return;
         }
@@ -256,6 +285,16 @@ export class SakanMqttSync {
     this.client.publish(
       topic,
       JSON.stringify({ locked, updatedAt: new Date().toISOString() }),
+      { retain: true, qos: 1 }
+    );
+  }
+
+  public publishSessionStatus(status: SessionStatus): void {
+    if (!this.client) return;
+    const topic = getSessionStatusTopic(this.roomCode);
+    this.client.publish(
+      topic,
+      JSON.stringify({ status, updatedAt: new Date().toISOString() }),
       { retain: true, qos: 1 }
     );
   }

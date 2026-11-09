@@ -191,15 +191,6 @@ export const StudentDeliveryView: React.FC<StudentDeliveryViewProps> = ({
                     <span className="text-xs font-bold px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-700">
                       {summary.roomNumber}
                     </span>
-                    <span
-                      className={`text-xs font-bold px-2.5 py-0.5 rounded-lg ${
-                        summary.isDelivered
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : 'bg-amber-50 text-amber-800 border border-amber-200'
-                      }`}
-                    >
-                      {summary.isDelivered ? 'استلم حاجته ✅' : 'لسه مستلمش 📦'}
-                    </span>
                   </div>
 
                   {/* Student's Items List */}
@@ -233,15 +224,18 @@ export const StudentDeliveryView: React.FC<StudentDeliveryViewProps> = ({
                     onClick={() =>
                       onToggleRoommateDelivered(summary, !summary.isDelivered)
                     }
-                    className={`w-full sm:w-auto min-h-[40px] px-4 py-2 text-xs font-bold rounded-xl transition-colors whitespace-nowrap cursor-pointer ${
+                    className={`w-full sm:w-auto min-h-[40px] px-4 py-2 text-xs font-bold rounded-xl transition-colors whitespace-nowrap cursor-pointer inline-flex items-center justify-center gap-1.5 ${
                       summary.isDelivered
-                        ? 'bg-emerald-700 text-white hover:bg-emerald-800'
+                        ? 'bg-emerald-600 text-white hover:bg-emerald-500'
                         : 'bg-slate-900 text-white hover:bg-slate-800'
                     }`}
                   >
-                    {summary.isDelivered
-                      ? 'استلم حاجته ✅ (اضغط للتراجع)'
-                      : 'تحديد كـ استلم حاجته'}
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        summary.isDelivered ? 'bg-white animate-pulse' : 'bg-slate-500'
+                      }`}
+                    />
+                    <span>{summary.isDelivered ? 'استلم حاجته' : 'تحديد كـ استلم'}</span>
                   </button>
                 </div>
               </div>

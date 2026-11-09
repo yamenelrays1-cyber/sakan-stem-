@@ -459,3 +459,110 @@ export function triggerSupervisorLockNotification(
     timestamp: now,
   };
 }
+
+let lastNotifiedSessionStatus: string | null = null;
+let lastNotifiedSessionTimestamp = 0;
+
+/**
+ * Triggers audio + system/push notification when the session status changes
+ * (especially when a new order opens 'open' or when the order arrives 'arrived').
+ */
+export function triggerSessionStatusNotification(
+  status: 'open' | 'sent' | 'arrived',
+  bypassDedup = false,
+  opts?: TriggerNotificationOptions
+): SupervisorLockNotificationPayload | null {
+  const now = Date.now();
+  if (
+    !bypassDedup &&
+    lastNotifiedSessionStatus === status &&
+    now - lastNotifiedSessionTimestamp < 1500
+  ) {
+    return null;
+  }
+  lastNotifiedSessionStatus = status;
+  lastNotifiedSessionTimestamp = now;
+
+  const isLocked = status !== 'open';
+  const isSupervisor = Boolean(opts?.isSupervisor);
+  const fromPushSw = Boolean(opts?.fromPushSw);
+
+  const title =
+    status === 'open'
+      ? '🟢 تم فتح طلب جديد في السكن!'
+      : status === 'arrived'
+        ? '🎉 الطلب وصل السكن دلوقتي!'
+        : '🛵 الطلب اتبعت للمطعم (تم قفل التعديل)';
+
+  const body =
+    status === 'open'
+      ? 'المشرف فتح جلسة طلب جديدة — ادخل سجل طلبك دلوقتي!'
+      : status === 'arrived'
+        ? 'الأوردر وصل السكن — انزل استلم طلبك من المشرف!'
+        : 'تم إرسال الطلب للمطعم وتقفيل الإضافة والتعديل.';
+
+  playSupervisorLockSound(status === 'sent');
+
+  if (isSupervisor) {
+    return { locked: isLocked, title, body, timestamp: now };
+  }
+
+  try {
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate(
+        status === 'arrived'
+          ? [300, 100, 300, 100, 500]
+          : isLocked
+            ? [400, 120, 400]
+            : [250, 100, 250, 100, 500]
+      );
+    }
+  } catch {
+    // ignore
+  }
+
+  if (
+    !fromPushSw &&
+    typeof window !== 'undefined' &&
+    'Notification' in window &&
+    Notification.permission === 'granted'
+  ) {
+    const uniqueTag = 'sakan-session-status-' + status + '-' + now;
+    const notifOptions: NotificationOptions & {
+      renotify?: boolean;
+      requireInteraction?: boolean;
+      vibrate?: number[];
+    } = {
+      body,
+      icon: '/sakan-icon-192.png',
+      badge: '/sakan-icon-192.png',
+      dir: 'rtl',
+      lang: 'ar',
+      tag: uniqueTag,
+      renotify: false,
+      requireInteraction: true,
+      silent: true,
+      vibrate: [250, 100, 250, 100, 500],
+    };
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready
+        .then((reg) => {
+          if (reg && typeof reg.showNotification === 'function') {
+            return reg.showNotification(title, notifOptions);
+          }
+          new Notification(title, notifOptions);
+        })
+        .catch(() => {
+          try {
+            new Notification(title, notifOptions);
+          } catch {
+            // ignore
+          }
+        });
+    }
+  }
+
+  return { locked: isLocked, title, body, timestamp: now };
+}
+

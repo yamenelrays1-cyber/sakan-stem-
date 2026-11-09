@@ -6,6 +6,7 @@ import {
   type PaymentMethod,
   type RoommateFinancialSummary,
   type RoommateOrderItem,
+  type SessionStatus,
 } from './types/orders';
 import {
   aggregateOrdersForMaster,
@@ -14,6 +15,9 @@ import {
   normalizeArabicItemName,
   verifyMasterPasscode,
   canUserModifyOrder,
+  canModifyOrdersInSession,
+  getNextSessionStatus,
+  getSessionStatusLabelAr,
   MASTER_PASSCODE,
 } from './utils/orderAggregator';
 import {
@@ -26,6 +30,8 @@ import {
 } from './utils/emailOtpService';
 import { TopBar, type AppEdition, type ThemeMode } from './components/TopBar';
 import { SessionToolbar } from './components/SessionToolbar';
+import { SessionStatusStepper } from './components/SessionStatusStepper';
+import { OrderSummaryModal } from './components/OrderSummaryModal';
 import {
   OrderFormCard,
   SAVED_STUDENT_NAME_KEY,
@@ -36,7 +42,11 @@ import { MasterAggregatedView } from './components/MasterAggregatedView';
 import { CashSettlementView } from './components/CashSettlementView';
 import { StudentDeliveryView } from './components/StudentDeliveryView';
 import { PWAInstallModal } from './components/PWAInstallModal';
-import { EntryScreen, VERIFIED_SESSION_STORAGE_KEY } from './components/EntryScreen';
+import {
+  EntryScreen,
+  VERIFIED_SESSION_STORAGE_KEY,
+  SAVED_STUDENT_PASSWORD_KEY,
+} from './components/EntryScreen';
 import { Footer } from './components/Footer';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import { SakanMqttSync, DEFAULT_ROOM_CODE } from './lib/mqttSync';
@@ -46,8 +56,23 @@ import {
   registerBackgroundPushSubscription,
   scheduleDelayedBackgroundPushTest,
   triggerSupervisorLockNotification,
+  triggerSessionStatusNotification,
   unlockNotificationAudioOnInteraction,
 } from './utils/supervisorNotifications';
+import {
+  auth,
+  onAuthStateChanged,
+  signInWithGoogle,
+  ensureFirebaseAnonymousIdentity,
+  ensureHouseMembershipInFirestore,
+  subscribeToHouseSessionRealtime,
+  saveOrderItemToFirestore,
+  updateOrderItemStudentFieldsInFirestore,
+  updateOrderItemSupervisorFieldsInFirestore,
+  deleteOrderItemFromFirestore,
+  updateSessionStatusInFirestore,
+  updateSessionConfigInFirestore,
+} from './lib/firebase';
 
 const LOCAL_STORAGE_DEVICE_ID_KEY = 'sakan_phone_device_id_v1';
 const LOCAL_STORAGE_BASE_PHONE_ID_KEY = 'sakan_base_phone_id_v1';
@@ -216,8 +241,7 @@ export default function App() {
     if (getInitialEditionFromUrl() === 'master') return false;
     const existingName = getSavedStudentName();
     const existingRoom = getSavedStudentRoom();
-    const existingEmail = getSavedStudentEmail();
-    if (!hasCompletedFirstLogin() || !existingName || !existingRoom || !existingEmail) {
+    if (!hasCompletedFirstLogin() || !existingName || !existingRoom) {
       return true;
     }
     return false;
@@ -225,7 +249,15 @@ export default function App() {
   const [isMasterUnlocked, setIsMasterUnlocked] = useState(false);
   const [masterFailedAttempts, setMasterFailedAttempts] = useState<number>(0);
   const [masterLockedUntilMs, setMasterLockedUntilMs] = useState<number>(0);
+  const [sessionStatus, setSessionStatus] = useState<SessionStatus>('open');
   const [isOrdersLocked, setIsOrdersLocked] = useState(false);
+  const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
+  const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(() =>
+    Boolean(auth.currentUser)
+  );
+  const [isOffline, setIsOffline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
   const [isDeliveryEnabled, setIsDeliveryEnabled] = useState<boolean>(false);
   const [deliveryFee, setDeliveryFee] = useState<number>(5);
   const [isSyrianMenuEnabled, setIsSyrianMenuEnabled] = useState<boolean>(() => {
@@ -285,12 +317,24 @@ export default function App() {
     }
   }, [theme]);
 
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   const { isInstallable, isInstalled, install } = usePWAInstall();
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const mqttRef = useRef<SakanMqttSync | null>(null);
   const mqttPushSubsRef = useRef<Record<string, PushSubscriptionJSON>>({});
   const myPushSubRef = useRef<PushSubscriptionJSON | null>(null);
   const lastKnownLockRef = useRef<boolean | null>(null);
+  const lastKnownSessionStatusRef = useRef<SessionStatus | null>(null);
   const initialSyncSettledRef = useRef<boolean>(false);
   const editionRef = useRef<AppEdition>(edition);
   editionRef.current = edition;
@@ -332,6 +376,28 @@ export default function App() {
     []
   );
 
+  const applyIncomingSessionStatus = useCallback(
+    (nextStatus: SessionStatus, forceNotify = false, fromPushSw = false) => {
+      const prevStatus = lastKnownSessionStatusRef.current;
+      lastKnownSessionStatusRef.current = nextStatus;
+      setSessionStatus(nextStatus);
+      const lockedByStatus = nextStatus !== 'open';
+      lastKnownLockRef.current = lockedByStatus;
+      setIsOrdersLocked(lockedByStatus);
+
+      if (
+        forceNotify ||
+        (initialSyncSettledRef.current && prevStatus !== null && prevStatus !== nextStatus)
+      ) {
+        triggerSessionStatusNotification(nextStatus, false, {
+          isSupervisor: editionRef.current === 'master',
+          fromPushSw,
+        });
+      }
+    },
+    []
+  );
+
   useEffect(() => {
     registerBackgroundPushSubscription(handleSubscribedPush).catch(() => {});
     const timer = window.setTimeout(() => {
@@ -341,7 +407,7 @@ export default function App() {
     // If opened by tapping a closed-app notification, play the lock/open sound on first interaction
     const params = new URLSearchParams(window.location.search);
     const lockSoundParam = params.get('lockSound');
-    if (lockSoundParam === 'locked' || lockSoundParam === 'open') {
+    if (lockSoundParam === 'locked' || lockSoundParam === 'open' || lockSoundParam === 'arrived') {
       playSupervisorLockSound(lockSoundParam === 'locked');
       try {
         const cleanUrl = new URL(window.location.href);
@@ -362,9 +428,19 @@ export default function App() {
     window.addEventListener('pointerdown', handleFirstInteraction, { once: true, passive: true });
 
     const handleSwMessage = (event: MessageEvent) => {
-      const data = event.data as { type?: string; locked?: boolean } | undefined;
-      if (data && data.type === 'SUPERVISOR_LOCK_PUSH_RECEIVED' && typeof data.locked === 'boolean') {
-        applyIncomingLockState(data.locked, true, true);
+      const data = event.data as
+        | { type?: string; locked?: boolean; sessionStatus?: SessionStatus }
+        | undefined;
+      if (data && data.type === 'SUPERVISOR_LOCK_PUSH_RECEIVED') {
+        if (
+          data.sessionStatus === 'open' ||
+          data.sessionStatus === 'sent' ||
+          data.sessionStatus === 'arrived'
+        ) {
+          applyIncomingSessionStatus(data.sessionStatus, true, true);
+        } else if (typeof data.locked === 'boolean') {
+          applyIncomingLockState(data.locked, true, true);
+        }
       }
     };
 
@@ -394,9 +470,99 @@ export default function App() {
         navigator.serviceWorker.removeEventListener('message', handleSwMessage);
       }
     };
-  }, [applyIncomingLockState, handleSubscribedPush]);
+  }, [applyIncomingLockState, applyIncomingSessionStatus, handleSubscribedPush]);
 
-  // Merge server orders + MQTT retained orders cleanly for the Master
+  const firestoreKnownIdsRef = useRef<Set<string>>(new Set());
+
+  const handleConnectFirebase = useCallback(async () => {
+    try {
+      const user = await signInWithGoogle();
+      if (user) {
+        setIsFirebaseConnected(true);
+        await ensureHouseMembershipInFirestore({
+          personName: savedStudentName || user.displayName || 'طالب السكن',
+          roomNumber: savedStudentRoom || 'غرفة 404',
+          isSupervisor: editionRef.current === 'master',
+        });
+      }
+    } catch {
+      // User closed popup or blocked third-party auth
+    }
+  }, [savedStudentName, savedStudentRoom]);
+
+  // Subscribe to Firebase Firestore real-time updates (onSnapshot) when user is authenticated
+  useEffect(() => {
+    let unsubFirestore: (() => void) | null = null;
+    let isCancelled = false;
+
+    const unsubAuth = onAuthStateChanged(auth, async (user) => {
+      if (unsubFirestore) {
+        unsubFirestore();
+        unsubFirestore = null;
+      }
+      if (!user) {
+        setIsFirebaseConnected(false);
+        void ensureFirebaseAnonymousIdentity();
+        return;
+      }
+      setIsFirebaseConnected(true);
+      try {
+        await ensureHouseMembershipInFirestore({
+          personName: getSavedStudentName() || user.displayName || 'طالب السكن',
+          roomNumber: getSavedStudentRoom() || 'غرفة 404',
+          isSupervisor: editionRef.current === 'master',
+        });
+      } catch {
+        // ignore initial bootstrap race
+      }
+      if (isCancelled) return;
+      unsubFirestore = subscribeToHouseSessionRealtime({
+          onSessionUpdate: (s) => {
+            applyIncomingSessionStatus(s.status);
+            setIsDeliveryEnabled(s.deliveryFee >= 0 ? s.isDeliveryEnabled : false);
+            setDeliveryFee(s.deliveryFee);
+            setIsSyrianMenuEnabled(s.isSyrianMenuEnabled);
+          },
+          onItemsUpdate: (items) => {
+            const nextIds = new Set(items.map((i) => i.id));
+            const removedIds: string[] = [];
+            for (const oldId of firestoreKnownIdsRef.current) {
+              if (!nextIds.has(oldId)) {
+                removedIds.push(oldId);
+              }
+            }
+            firestoreKnownIdsRef.current = nextIds;
+
+            setMasterAllOrders(items);
+
+            if (removedIds.length > 0) {
+              setMyStudentOrders((prev) => prev.filter((o) => !removedIds.includes(o.id)));
+            }
+
+            setMqttOrdersMap((prev) => {
+              const next = { ...prev };
+              for (const remId of removedIds) {
+                delete next[remId];
+              }
+              for (const item of items) {
+                const existing = next[item.id];
+                if (!existing || item.updatedAt >= existing.updatedAt) {
+                  next[item.id] = item;
+                }
+              }
+              return next;
+            });
+          },
+        });
+    });
+    return () => {
+      isCancelled = true;
+      unsubAuth();
+      if (unsubFirestore) unsubFirestore();
+    };
+  }, [applyIncomingSessionStatus]);
+
+  // Merge server orders + Firestore onSnapshot orders + MQTT retained orders cleanly for Master & Summary Modal
   const combinedAllOrders = useMemo(() => {
     const merged = new Map<string, RoommateOrderItem>();
     for (const ord of myStudentOrders) {
@@ -416,7 +582,7 @@ export default function App() {
     );
   }, [myStudentOrders, masterAllOrders, mqttOrdersMap]);
 
-  // Student's OWN orders on this phone only (strictly isolated by deviceId + current student name & room)
+  // Student's OWN orders on this phone (strictly isolated by deviceId + current student name & room)
   const combinedMyStudentOrders = useMemo(() => {
     const merged = new Map<string, RoommateOrderItem>();
     const activeName = savedStudentName.trim();
@@ -433,6 +599,14 @@ export default function App() {
         merged.set(ord.id, ord);
       }
     }
+    for (const ord of masterAllOrders) {
+      if (matchesActiveStudent(ord)) {
+        const existing = merged.get(ord.id);
+        if (!existing || ord.updatedAt >= existing.updatedAt) {
+          merged.set(ord.id, ord);
+        }
+      }
+    }
     for (const [id, ord] of Object.entries(mqttOrdersMap)) {
       if (ord.deviceId === deviceId && matchesActiveStudent(ord)) {
         const existing = merged.get(id);
@@ -444,7 +618,7 @@ export default function App() {
     return Array.from(merged.values()).sort((a, b) =>
       b.createdAt.localeCompare(a.createdAt)
     );
-  }, [myStudentOrders, mqttOrdersMap, deviceId, savedStudentName, savedStudentRoom]);
+  }, [myStudentOrders, masterAllOrders, mqttOrdersMap, deviceId, savedStudentName, savedStudentRoom]);
 
   // Connect to MQTT.js broker (wss://broker.emqx.io:8084/mqtt) for real-time cross-phone sync
   useEffect(() => {
@@ -457,6 +631,9 @@ export default function App() {
       },
       onLockStatusChange: (locked) => {
         applyIncomingLockState(locked);
+      },
+      onSessionStatusChange: (status) => {
+        applyIncomingSessionStatus(status);
       },
       onDeliveryStatusChange: (enabled, fee) => {
         setIsDeliveryEnabled(enabled);
@@ -502,9 +679,9 @@ export default function App() {
       sync.disconnect();
       mqttRef.current = null;
     };
-  }, [applyIncomingLockState, deviceId]);
+  }, [applyIncomingLockState, applyIncomingSessionStatus, deviceId]);
 
-  // Fetch ONLY this phone's orders for Student Edition
+  // Fetch ONLY this phone's orders for Student Edition (+ allSessionItems for summary)
   const fetchMyPhoneOrders = useCallback(async () => {
     try {
       const res = await fetch(`/api/orders?mode=student&deviceId=${encodeURIComponent(deviceId)}`);
@@ -513,7 +690,16 @@ export default function App() {
         if (Array.isArray(data.orders)) {
           setMyStudentOrders(data.orders);
         }
-        if (typeof data.isOrdersLocked === 'boolean') {
+        if (Array.isArray(data.allSessionItems)) {
+          setMasterAllOrders(data.allSessionItems);
+        }
+        if (
+          data.sessionStatus === 'open' ||
+          data.sessionStatus === 'sent' ||
+          data.sessionStatus === 'arrived'
+        ) {
+          applyIncomingSessionStatus(data.sessionStatus);
+        } else if (typeof data.isOrdersLocked === 'boolean') {
           applyIncomingLockState(data.isOrdersLocked);
         }
         if (typeof data.isDeliveryEnabled === 'boolean') {
@@ -537,7 +723,7 @@ export default function App() {
     } catch {
       // ignore offline fetch errors
     }
-  }, [deviceId, applyIncomingLockState]);
+  }, [deviceId, applyIncomingLockState, applyIncomingSessionStatus]);
 
   // Fetch ALL phones' orders for Supervisor Edition (requires 0902 passcode)
   const fetchMasterOrders = useCallback(async () => {
@@ -549,7 +735,13 @@ export default function App() {
         if (Array.isArray(data.orders)) {
           setMasterAllOrders(data.orders);
         }
-        if (typeof data.isOrdersLocked === 'boolean') {
+        if (
+          data.sessionStatus === 'open' ||
+          data.sessionStatus === 'sent' ||
+          data.sessionStatus === 'arrived'
+        ) {
+          applyIncomingSessionStatus(data.sessionStatus);
+        } else if (typeof data.isOrdersLocked === 'boolean') {
           applyIncomingLockState(data.isOrdersLocked);
         }
         if (typeof data.isDeliveryEnabled === 'boolean') {
@@ -573,7 +765,7 @@ export default function App() {
     } catch {
       // ignore offline fetch errors
     }
-  }, [isMasterUnlocked, applyIncomingLockState]);
+  }, [isMasterUnlocked, applyIncomingLockState, applyIncomingSessionStatus]);
 
   useEffect(() => {
     fetchMyPhoneOrders();
@@ -585,19 +777,29 @@ export default function App() {
     }
   }, [edition, isMasterUnlocked, fetchMasterOrders]);
 
-  // Subscribe to Server-Sent Events so any order or lock change from any phone updates live
+  // Subscribe to Server-Sent Events so any order or lock/sessionStatus change from any phone updates live
   useEffect(() => {
     const evtSource = new EventSource('/api/orders/stream');
     evtSource.onmessage = (event) => {
       try {
         const parsed = JSON.parse(event.data) as {
           type?: string;
+          sessionStatus?: SessionStatus;
           isOrdersLocked?: boolean;
           isDeliveryEnabled?: boolean;
           deliveryFee?: number;
           isSyrianMenuEnabled?: boolean;
         };
-        if (typeof parsed.isOrdersLocked === 'boolean') {
+        if (
+          parsed.sessionStatus === 'open' ||
+          parsed.sessionStatus === 'sent' ||
+          parsed.sessionStatus === 'arrived'
+        ) {
+          applyIncomingSessionStatus(
+            parsed.sessionStatus,
+            parsed.type === 'sessionStatus:changed'
+          );
+        } else if (typeof parsed.isOrdersLocked === 'boolean') {
           applyIncomingLockState(
             parsed.isOrdersLocked,
             parsed.type === 'lock:changed'
@@ -631,7 +833,7 @@ export default function App() {
     return () => {
       evtSource.close();
     };
-  }, [fetchMyPhoneOrders, fetchMasterOrders, isMasterUnlocked, applyIncomingLockState]);
+  }, [fetchMyPhoneOrders, fetchMasterOrders, isMasterUnlocked, applyIncomingLockState, applyIncomingSessionStatus]);
 
   const handleSelectEdition = (nextEdition: AppEdition) => {
     setEdition(nextEdition);
@@ -639,8 +841,7 @@ export default function App() {
       const hasLogin =
         hasCompletedFirstLogin() &&
         Boolean(savedStudentName) &&
-        Boolean(savedStudentRoom) &&
-        Boolean(savedStudentEmail);
+        Boolean(savedStudentRoom);
       setShowEntryScreen(!hasLogin);
       setIsMasterUnlocked(false);
       setPasscodeInput('');
@@ -663,14 +864,17 @@ export default function App() {
     }
   };
 
-  const handleSaveStudentProfileAndEnter = (name: string, room: DormRoom, email: string) => {
+  const handleSaveStudentProfileAndEnter = (
+    name: string,
+    room: DormRoom,
+    email: string = 'student@sakan.local'
+  ) => {
     const trimmedName = sanitizeTextInput(name, 60);
-    const trimmedEmail = sanitizeTextInput(email, 120).toLowerCase();
+    const trimmedEmail = sanitizeTextInput(email || 'student@sakan.local', 120).toLowerCase();
     const isProfileChanged =
       (normalizeArabicItemName(trimmedName) || trimmedName) !==
         (normalizeArabicItemName(savedStudentName) || savedStudentName.trim()) ||
-      room !== savedStudentRoom ||
-      trimmedEmail !== savedStudentEmail.trim().toLowerCase();
+      room !== savedStudentRoom;
     const nextDeviceId = computeProfileDeviceId(trimmedName, room);
 
     try {
@@ -701,6 +905,11 @@ export default function App() {
     setSavedStudentEmail(trimmedEmail);
     setEdition('student');
     setShowEntryScreen(false);
+    void ensureHouseMembershipInFirestore({
+      personName: trimmedName,
+      roomNumber: room,
+      isSupervisor: false,
+    });
     ensureNotificationPermission(handleSubscribedPush).then((perm) => setNotificationPermission(perm));
   };
 
@@ -712,6 +921,7 @@ export default function App() {
       localStorage.removeItem(SAVED_STUDENT_NAME_KEY);
       localStorage.removeItem(SAVED_STUDENT_ROOM_KEY);
       localStorage.removeItem(SAVED_STUDENT_EMAIL_KEY);
+      localStorage.removeItem(SAVED_STUDENT_PASSWORD_KEY);
     } catch {
       // ignore
     }
@@ -741,6 +951,11 @@ export default function App() {
       setMasterLockedUntilMs(0);
       setPasscodeError(null);
       setPasscodeInput('');
+      void ensureHouseMembershipInFirestore({
+        personName: savedStudentName || 'مشرف السكن',
+        roomNumber: savedStudentRoom || 'غرفة 404',
+        isSupervisor: true,
+      });
       ensureNotificationPermission(handleSubscribedPush).then((perm) => setNotificationPermission(perm));
     } else {
       const rate = evaluateAttemptRateLimit(masterFailedAttempts, masterLockedUntilMs, now);
@@ -873,6 +1088,10 @@ export default function App() {
 
       for (const u of updatedList) {
         mqttRef.current?.publishOrder(u);
+        void updateOrderItemStudentFieldsInFirestore(u.id, {
+          paymentMethod: nextMethod,
+          cashPaidAmount: u.cashPaidAmount,
+        });
       }
 
       try {
@@ -938,13 +1157,14 @@ export default function App() {
         : 0;
 
     // If this is the first order or we put total prepared cash on the newest (first) order:
+    const currentUid = auth.currentUser?.uid || 'sakan_default_owner';
     const newOrder: RoommateOrderItem = {
       id: newId,
       deviceId,
       sessionId: DEFAULT_ROOM_CODE,
-      sessionOwnerId: 'sakan_default_owner',
-      authorUid: 'sakan_default_owner',
-      memberUids: ['sakan_default_owner'],
+      sessionOwnerId: currentUid,
+      authorUid: currentUid,
+      memberUids: [currentUid],
       roommateName: sanitized.roommateName,
       roomNumber: sanitized.roomNumber,
       itemName: sanitized.itemName,
@@ -980,10 +1200,15 @@ export default function App() {
       return next;
     });
 
-    // 2. Publish to MQTT cloud
+    // 2. Publish to MQTT cloud & Firebase Firestore (real-time onSnapshot)
     mqttRef.current?.publishOrder(newOrder);
+    void saveOrderItemToFirestore(newOrder);
     for (const z of zeroedPreviousOrders) {
       mqttRef.current?.publishOrder(z);
+      void updateOrderItemStudentFieldsInFirestore(z.id, {
+        paymentMethod: activeMethod,
+        cashPaidAmount: 0,
+      });
     }
 
     // 3. Persist to backend API
@@ -1016,6 +1241,12 @@ export default function App() {
   };
 
   const handleUpdateOrderQuantity = async (orderId: string, newQuantity: number) => {
+    const isSupervisor = edition === 'master' && isMasterUnlocked;
+    if (!isSupervisor && !canModifyOrdersInSession(sessionStatus)) {
+      setStatusBanner('تم إرسال الطلب وتقفيل التعديل — لا يمكن تعديل الأصناف بعد مرحلة "اتبعت".');
+      return;
+    }
+
     const clamped = Math.max(1, Math.min(100, newQuantity));
     const target = combinedMyStudentOrders.find((o) => o.id === orderId);
     if (
@@ -1024,7 +1255,7 @@ export default function App() {
         deviceId,
         name: savedStudentName,
         room: savedStudentRoom,
-        isSupervisorUnlocked: edition === 'master' && isMasterUnlocked,
+        isSupervisorUnlocked: isSupervisor,
       })
     ) {
       setStatusBanner('غير مسموح بتعديل طلب مستخدم آخر.');
@@ -1046,6 +1277,8 @@ export default function App() {
           ? Math.max(newTotalReq, myCurrentPreparedCash)
           : newTotalReq
         : 0;
+
+    void updateOrderItemStudentFieldsInFirestore(orderId, { qty: clamped });
 
     try {
       await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
@@ -1078,6 +1311,10 @@ export default function App() {
       };
       setMqttOrdersMap((prev) => ({ ...prev, [item.id]: settledOrder }));
       mqttRef.current?.publishOrder(settledOrder);
+      void updateOrderItemSupervisorFieldsInFirestore(item.id, {
+        isPaid: true,
+        cashPaidAmount: settledOrder.cashPaidAmount,
+      });
     }
 
     setMasterAllOrders((prev) =>
@@ -1123,6 +1360,9 @@ export default function App() {
       };
       setMqttOrdersMap((prev) => ({ ...prev, [item.id]: updatedOrder }));
       mqttRef.current?.publishOrder(updatedOrder);
+      void updateOrderItemSupervisorFieldsInFirestore(item.id, {
+        isDelivered: targetDeliveredState,
+      });
     }
 
     setMasterAllOrders((prev) =>
@@ -1179,6 +1419,9 @@ export default function App() {
       };
       setMqttOrdersMap((prev) => ({ ...prev, [ord.id]: updated }));
       mqttRef.current?.publishOrder(updated);
+      void updateOrderItemSupervisorFieldsInFirestore(ord.id, {
+        isPurchased: targetPurchasedState,
+      });
     }
 
     setMasterAllOrders((prev) =>
@@ -1205,6 +1448,12 @@ export default function App() {
   };
 
   const handleDeleteOrder = async (orderId: string) => {
+    const isSupervisor = edition === 'master' && isMasterUnlocked;
+    if (!isSupervisor && !canModifyOrdersInSession(sessionStatus)) {
+      setStatusBanner('تم إرسال الطلب وتقفيل الحذف — لا يمكن حذف الأصناف بعد مرحلة "اتبعت".');
+      return;
+    }
+
     const targetOrder =
       combinedMyStudentOrders.find((o) => o.id === orderId) ||
       combinedAllOrders.find((o) => o.id === orderId);
@@ -1214,7 +1463,7 @@ export default function App() {
         deviceId,
         name: savedStudentName,
         room: savedStudentRoom,
-        isSupervisorUnlocked: edition === 'master' && isMasterUnlocked,
+        isSupervisorUnlocked: isSupervisor,
       })
     ) {
       setStatusBanner('غير مسموح بحذف طلب مستخدم آخر.');
@@ -1232,6 +1481,7 @@ export default function App() {
     });
 
     mqttRef.current?.deleteOrder(orderId);
+    void deleteOrderItemFromFirestore(orderId);
 
     try {
       await fetch(
@@ -1265,17 +1515,60 @@ export default function App() {
     }
   };
 
+  // Supervisor single-button status cycle: مفتوح -> اتبعت -> وصل -> مفتوح
+  const handleAdvanceSessionStatus = async () => {
+    await ensureNotificationPermission(handleSubscribedPush).then((perm) =>
+      setNotificationPermission(perm)
+    );
+    const nextStatus = getNextSessionStatus(sessionStatus);
+    const nextLocked = nextStatus !== 'open';
+    initialSyncSettledRef.current = true;
+    lastKnownSessionStatusRef.current = nextStatus;
+    lastKnownLockRef.current = nextLocked;
+    setSessionStatus(nextStatus);
+    setIsOrdersLocked(nextLocked);
+
+    triggerSessionStatusNotification(nextStatus, true, { isSupervisor: true });
+    mqttRef.current?.publishSessionStatus(nextStatus);
+    mqttRef.current?.publishLockStatus(nextLocked);
+    void updateSessionStatusInFirestore(nextStatus);
+
+    const studentSubscriptions = Object.entries(mqttPushSubsRef.current)
+      .filter(([subDeviceId]) => subDeviceId !== deviceId)
+      .map(([, sub]) => sub);
+
+    try {
+      await fetch('/api/orders/session-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          passcode: MASTER_PASSCODE,
+          status: nextStatus,
+          subscriptions: studentSubscriptions,
+          excludeEndpoint: myPushSubRef.current?.endpoint,
+        }),
+      });
+    } catch {
+      // ignore
+    }
+  };
+
   const handleToggleOrdersLock = async () => {
     await ensureNotificationPermission(handleSubscribedPush).then((perm) =>
       setNotificationPermission(perm)
     );
     const nextLocked = !isOrdersLocked;
+    const nextStatus: SessionStatus = nextLocked ? 'sent' : 'open';
     initialSyncSettledRef.current = true;
     lastKnownLockRef.current = nextLocked;
+    lastKnownSessionStatusRef.current = nextStatus;
     setIsOrdersLocked(nextLocked);
+    setSessionStatus(nextStatus);
     // Supervisor toggles orders: play sound without vibrating the Supervisor's own phone
     triggerSupervisorLockNotification(nextLocked, true, { isSupervisor: true });
     mqttRef.current?.publishLockStatus(nextLocked);
+    mqttRef.current?.publishSessionStatus(nextStatus);
+    void updateSessionStatusInFirestore(nextStatus);
 
     const studentSubscriptions = Object.entries(mqttPushSubsRef.current)
       .filter(([subDeviceId]) => subDeviceId !== deviceId)
@@ -1295,12 +1588,6 @@ export default function App() {
     } catch {
       // ignore
     }
-
-    setStatusBanner(
-      nextLocked
-        ? 'تم قفل الطلبات.'
-        : 'تم فتح الطلبات.'
-    );
   };
 
   const handleUpdateDeliverySettings = async (nextEnabled: boolean, nextFee: number) => {
@@ -1308,6 +1595,10 @@ export default function App() {
     setIsDeliveryEnabled(nextEnabled);
     setDeliveryFee(cleanFee);
     mqttRef.current?.publishDeliveryStatus(nextEnabled, cleanFee);
+    void updateSessionConfigInFirestore({
+      isDeliveryEnabled: nextEnabled,
+      deliveryFee: cleanFee,
+    });
 
     try {
       await fetch('/api/orders/delivery', {
@@ -1333,6 +1624,9 @@ export default function App() {
       // ignore
     }
     mqttRef.current?.publishSyrianMenuStatus(nextEnabled);
+    void updateSessionConfigInFirestore({
+      isSyrianMenuEnabled: nextEnabled,
+    });
 
     try {
       await fetch('/api/orders/syrian-menu', {
@@ -1346,24 +1640,25 @@ export default function App() {
     } catch {
       // ignore
     }
-
-    setStatusBanner(
-      nextEnabled
-        ? 'تم تفعيل قائمة سندوتشات سوري للطلاب 🌯 — يظهر للطلاب الآن أصناف السوري فقط.'
-        : 'تم إيقاف قائمة سندوتشات سوري — عاد الطلب الحر للطلاب.'
-    );
   };
 
   const handleClearAllOrders = async () => {
     const allIds = combinedAllOrders.map((o) => o.id);
     mqttRef.current?.clearAllOrders(allIds);
     mqttRef.current?.publishLockStatus(false);
+    mqttRef.current?.publishSessionStatus('open');
+    for (const id of allIds) {
+      void deleteOrderItemFromFirestore(id);
+    }
+    void updateSessionStatusInFirestore('open');
 
     setMasterAllOrders([]);
     setMyStudentOrders([]);
     setMqttOrdersMap({});
     lastKnownLockRef.current = false;
+    lastKnownSessionStatusRef.current = 'open';
     setIsOrdersLocked(false);
+    setSessionStatus('open');
 
     try {
       await fetch('/api/orders/clear', {
@@ -1374,7 +1669,7 @@ export default function App() {
     } catch {
       // ignore
     }
-    setStatusBanner('تم مسح القائمة لبدء أوردر جديد.');
+    setStatusBanner('تم مسح القائمة لبدء أوردر جديد (الحالة: مفتوح).');
   };
 
   const handleCopyMasterSummary = async () => {
@@ -1408,6 +1703,8 @@ export default function App() {
     setTimeout(() => setCopiedSummaryRecently(false), 3000);
   };
 
+  const isModificationAllowed = canModifyOrdersInSession(sessionStatus);
+
   return (
     <div
       id="top"
@@ -1429,6 +1726,37 @@ export default function App() {
         onLogout={handleStudentLogout}
         theme={theme}
         onToggleTheme={handleToggleTheme}
+      />
+
+      {/* Top Session Status Progress Bar (مفتوح -> اتبعت -> وصل) — Hidden on Supervisor login gate */}
+      {!showEntryScreen && (edition === 'student' || isMasterUnlocked) && (
+        <SessionStatusStepper
+          status={sessionStatus}
+          isSupervisor={edition === 'master' && isMasterUnlocked}
+          onAdvanceStatus={handleAdvanceSessionStatus}
+          onOpenSummaryModal={() => setIsSummaryModalOpen(true)}
+          totalItemsCount={combinedAllOrders.reduce((acc, o) => acc + o.quantity, 0)}
+          isFirebaseConnected={isFirebaseConnected}
+          onConnectFirebase={handleConnectFirebase}
+        />
+      )}
+
+      {/* Offline / Weak Internet PWA Cache Banner */}
+      {isOffline && (
+        <div
+          role="status"
+          dir="rtl"
+          className="bg-amber-900 text-amber-50 text-xs font-bold px-4 py-2 text-center border-b border-amber-700"
+        >
+          ⚡ أنت الآن في وضع عدم الاتصال / الإنترنت الضعيف (Offline PWA) — الواجهة محفوظة وتعمل من ذاكرة الجهاز، وسيتم المزامنة تلقائياً فور عودة الشبكة.
+        </div>
+      )}
+
+      {/* Order Summary Modal (ملخص الطلب: 3 شاورما، 2 كولا + انسخ + ابعت واتساب) */}
+      <OrderSummaryModal
+        isOpen={isSummaryModalOpen}
+        onClose={() => setIsSummaryModalOpen(false)}
+        orders={combinedAllOrders}
       />
 
       {/* PWA / APK Installation Modal */}
@@ -1474,7 +1802,7 @@ export default function App() {
           </div>
         )}
 
-        {/* START / ENTRY SCREEN (صفحة تسجيل الدخول بـ Gmail والباسورد والـ OTP والاسم والغرفة) */}
+        {/* START / ENTRY SCREEN (صفحة تسجيل الدخول بـ Gmail والباسورد والـ OTP والاسم والغرفة وكود السكن) */}
         {showEntryScreen && (
           <EntryScreen
             initialName={savedStudentName}
@@ -1497,7 +1825,7 @@ export default function App() {
                         إشعارات الموبايل وأنت قافل التطبيق 🔔
                       </div>
                       <div className="text-[11px] text-slate-500">
-                        فعّلها مرة واحدة علشان يوصلك إشعار على شاشة القفل أول ما المشرف يفتح أو يقفل الطلبات وأنت سايب الموبايل.
+                        فعّلها مرة واحدة علشان يوصلك إشعار على شاشة القفل أول ما المشرف يفتح طلب جديد أو لما الطلب يوصل السكن.
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -1530,7 +1858,7 @@ export default function App() {
                       <div className="text-[11px] text-slate-500">
                         {backgroundTestPending
                           ? 'اقفل التطبيق خالص دلوقتي أو اقفل شاشة الموبايل — هيوصلك الإشعار بالصوت خلال 4 ثواني...'
-                          : 'هيوصلك إشعار بالصوت على التليفون تلقائياً أول ما المشرف يفتح أو يقفل الطلبات حتى لو قافل التطبيق خالص.'}
+                          : 'هيوصلك إشعار بالصوت على التليفون تلقائياً أول ما المشرف يفتح طلب جديد أو يغير الحالة إلى "وصل".'}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -1569,7 +1897,7 @@ export default function App() {
 
             <OrderFormCard
               nameInputRef={nameInputRef}
-              isOrdersLocked={isOrdersLocked}
+              isOrdersLocked={isOrdersLocked || !isModificationAllowed}
               isDeliveryEnabled={isDeliveryEnabled}
               deliveryFee={deliveryFee}
               isSyrianMenuEnabled={isSyrianMenuEnabled}
@@ -1593,15 +1921,20 @@ export default function App() {
                 </h2>
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span
-                    className={`px-2.5 py-1 rounded-xl text-xs font-bold font-mono tabular-nums ${
+                    className={`px-2.5 py-1 rounded-xl text-xs font-bold font-mono tabular-nums inline-flex items-center gap-1.5 border transition-colors ${
                       activeDeliveryFee > 0
-                        ? 'bg-amber-100 text-amber-900 border border-amber-200'
-                        : 'bg-slate-100 text-slate-600'
+                        ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
+                        : 'bg-slate-100 text-slate-400 border-slate-200'
                     }`}
                   >
-                    {activeDeliveryFee > 0
-                      ? `🛵 فلوس الدليفري: ${activeDeliveryFee} ج.م`
-                      : 'الدليفري: 0 ج.م (مطفي)'}
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        activeDeliveryFee > 0 ? 'bg-white animate-pulse' : 'bg-slate-400'
+                      }`}
+                    />
+                    <span>
+                      {activeDeliveryFee > 0 ? `🛵 الدليفري ${activeDeliveryFee} ج.م` : '🛵 الدليفري'}
+                    </span>
                   </span>
                   {combinedMyStudentOrders.length > 0 && (
                     <span className="px-3 py-1 rounded-xl bg-slate-900 text-white text-xs font-bold font-mono tabular-nums">
@@ -1611,16 +1944,22 @@ export default function App() {
                 </div>
               </div>
 
+              {!isModificationAllowed && (
+                <div
+                  role="status"
+                  className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs font-bold text-amber-900 flex items-center justify-between gap-2"
+                >
+                  <span>
+                    🔒 حالة الطلب الآن «{getSessionStatusLabelAr(sessionStatus)}» — تم قفل التعديل والحذف على الأصناف بعد مرحلة «اتبعت».
+                  </span>
+                </div>
+              )}
+
               {combinedMyStudentOrders.length === 0 ? (
                 <div className="py-6 text-center space-y-2">
                   <p className="text-xs text-slate-500">
-                    لسه مضفتش طلبات — ضيف كل الطلبات اللي عايزها فوق، وبعدها هيظهرلك هنا إجمالي الفلوس المطلوبة منك وتحدد هتجهز كام للمشرف مرة واحدة.
+                    لسه مضفتش طلبات — ضيف طلباتك من فوق وهيظهرلك هنا الإجمالي المطلوب منك.
                   </p>
-                  {activeDeliveryFee > 0 && (
-                    <p className="text-xs font-bold text-amber-800">
-                      🛵 فلوس الدليفري المحددة من المشرف قبل إرسال الطلب: {activeDeliveryFee} ج.م
-                    </p>
-                  )}
                 </div>
               ) : (
                 <>
@@ -1654,8 +1993,9 @@ export default function App() {
                             <button
                               type="button"
                               aria-label={`زيادة كمية ${order.itemName}`}
+                              disabled={!isModificationAllowed}
                               onClick={() => handleUpdateOrderQuantity(order.id, order.quantity + 1)}
-                              className="min-w-[38px] min-h-[38px] px-2.5 text-xs font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+                              className="min-w-[38px] min-h-[38px] px-2.5 text-xs font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-colors cursor-pointer"
                             >
                               +1
                             </button>
@@ -1667,16 +2007,17 @@ export default function App() {
                                   handleUpdateOrderQuantity(order.id, order.quantity - 1);
                                 }
                               }}
-                              disabled={order.quantity <= 1}
-                              className="min-w-[38px] min-h-[38px] px-2.5 text-xs font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 rounded-lg transition-colors cursor-pointer"
+                              disabled={!isModificationAllowed || order.quantity <= 1}
+                              className="min-w-[38px] min-h-[38px] px-2.5 text-xs font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-colors cursor-pointer"
                             >
                               −1
                             </button>
                             <button
                               type="button"
                               aria-label={`حذف طلب ${order.itemName}`}
+                              disabled={!isModificationAllowed}
                               onClick={() => handleDeleteOrder(order.id)}
-                              className="min-h-[38px] px-3 text-xs font-semibold text-rose-700 hover:bg-rose-50 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                              className="min-h-[38px] px-3 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
                             >
                               حذف
                             </button>

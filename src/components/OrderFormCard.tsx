@@ -250,37 +250,35 @@ export const OrderFormCard: React.FC<OrderFormCardProps> = ({
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {isSyrianMenuEnabled && (
-            <span className="px-2.5 py-1 rounded-lg bg-amber-200 text-amber-950 border border-amber-300 text-xs font-extrabold">
-              🌯 سندوتشات سوري
+            <span className="px-2.5 py-1 rounded-xl bg-emerald-600 text-white border border-emerald-500 text-xs font-extrabold inline-flex items-center gap-1.5 shadow-xs">
+              <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+              <span>🌯 سندوتشات سوري</span>
             </span>
           )}
-          {activeDeliveryAmount > 0 && (
-            <span className="px-2.5 py-1 rounded-lg bg-amber-100 text-amber-900 border border-amber-200 text-xs font-bold font-mono tabular-nums">
-              🛵 الدليفري: {activeDeliveryAmount} ج.م
+          <span
+            className={`px-2.5 py-1 rounded-xl text-xs font-bold font-mono tabular-nums inline-flex items-center gap-1.5 border transition-colors ${
+              activeDeliveryAmount > 0
+                ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
+                : 'bg-slate-100 text-slate-400 border-slate-200'
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                activeDeliveryAmount > 0 ? 'bg-white animate-pulse' : 'bg-slate-400'
+              }`}
+            />
+            <span>
+              {activeDeliveryAmount > 0 ? `🛵 الدليفري ${activeDeliveryAmount} ج.م` : '🛵 الدليفري'}
             </span>
-          )}
+          </span>
           {isOrdersLocked && (
-            <span className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold">
-              الطلبات مقفولة
+            <span className="px-2.5 py-1 rounded-xl bg-rose-600 text-white border border-rose-500 text-xs font-bold inline-flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-rose-200" />
+              <span>مقفول</span>
             </span>
           )}
         </div>
       </div>
-
-      {/* Delivery Fee Notice Before Sending the Order */}
-      {activeDeliveryAmount > 0 && (
-        <div
-          id="student-delivery-fee-banner"
-          className="mt-4 p-3 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-2 text-xs"
-        >
-          <span className="font-bold text-amber-900">
-            🛵 فلوس الدليفري المحددة من المشرف:
-          </span>
-          <span className="font-extrabold font-mono tabular-nums text-amber-900 bg-white px-2.5 py-1 rounded-lg border border-amber-200">
-            {activeDeliveryAmount} ج.م (تُضاف مرة واحدة على إجمالي طلبك)
-          </span>
-        </div>
-      )}
 
       {isOrdersLocked && (
         <div

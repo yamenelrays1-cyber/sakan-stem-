@@ -1,18 +1,110 @@
-// Top-Level Synchronous Push & Lock-Screen Notification Service Worker for Sakan Orders
+// Full PWA Offline Caching + Web Push Service Worker for Sakan Orders
 
-self.addEventListener('install', function () {
+const CACHE_NAME = 'sakan-pwa-ui-cache-v2';
+const PRECACHE_URLS = [
+  '/',
+  '/index.html',
+  '/manifest.webmanifest',
+  '/sakan-icon-192.png',
+  '/sakan-icon-512.png',
+  '/icon.svg',
+];
+
+self.addEventListener('install', function (event) {
   self.skipWaiting();
+  event.waitUntil(
+    caches
+      .open(CACHE_NAME)
+      .then(function (cache) {
+        return cache.addAll(PRECACHE_URLS).catch(function () {
+          // Ignore individual asset failure during dev
+        });
+      })
+  );
 });
 
 self.addEventListener('activate', function (event) {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches
+      .keys()
+      .then(function (keys) {
+        return Promise.all(
+          keys.map(function (key) {
+            if (key !== CACHE_NAME) {
+              return caches.delete(key);
+            }
+          })
+        );
+      })
+      .then(function () {
+        return self.clients.claim();
+      })
+  );
+});
+
+// Cache-first / Stale-while-revalidate for UI shell, scripts, styles, fonts, and images so the app opens fast on weak internet
+self.addEventListener('fetch', function (event) {
+  const req = event.request;
+  if (req.method !== 'GET') return;
+
+  const url = new URL(req.url);
+  // Never cache real-time API or SSE streams
+  if (url.pathname.startsWith('/api/')) return;
+
+  // Navigation requests: Network first, fallback to cached /index.html
+  if (req.mode === 'navigate') {
+    event.respondWith(
+      fetch(req)
+        .then(function (networkRes) {
+          const clone = networkRes.clone();
+          caches.open(CACHE_NAME).then(function (cache) {
+            cache.put('/index.html', clone);
+          });
+          return networkRes;
+        })
+        .catch(function () {
+          return caches.match('/index.html').then(function (cached) {
+            return cached || caches.match('/');
+          });
+        })
+    );
+    return;
+  }
+
+  // Static UI assets (JS, CSS, fonts, images, sounds): Stale-While-Revalidate
+  if (
+    url.origin === self.location.origin ||
+    url.hostname.includes('fonts.googleapis.com') ||
+    url.hostname.includes('fonts.gstatic.com')
+  ) {
+    event.respondWith(
+      caches.match(req).then(function (cachedRes) {
+        const networkFetch = fetch(req)
+          .then(function (networkRes) {
+            if (networkRes && networkRes.status === 200) {
+              const clone = networkRes.clone();
+              caches.open(CACHE_NAME).then(function (cache) {
+                cache.put(req, clone);
+              });
+            }
+            return networkRes;
+          })
+          .catch(function () {
+            return cachedRes;
+          });
+
+        return cachedRes || networkFetch;
+      })
+    );
+  }
 });
 
 self.addEventListener('push', function (event) {
   let payload = {
     title: '🔔 تنبيه من المشرف — طلبات السكن',
-    body: 'تم تحديث حالة استقبال الطلبات في السكن.',
+    body: 'تم تحديث حالة الطلب في السكن.',
     locked: false,
+    sessionStatus: 'open',
     timestamp: Date.now(),
   };
 
@@ -28,11 +120,13 @@ self.addEventListener('push', function (event) {
   }
 
   const isLocked = Boolean(payload.locked);
+  const sessionStatus = payload.sessionStatus || (isLocked ? 'sent' : 'open');
   const eventTimestamp = payload.timestamp || Date.now();
-  const alertTag = 'sakan-lock-alert-' + eventTimestamp;
-  const soundUrl = isLocked
-    ? '/sounds/supervisor-lock.wav?v=3'
-    : '/sounds/supervisor-open.wav?v=3';
+  const alertTag = 'sakan-status-alert-' + sessionStatus + '-' + eventTimestamp;
+  const soundUrl =
+    sessionStatus === 'sent'
+      ? '/sounds/supervisor-lock.wav?v=3'
+      : '/sounds/supervisor-open.wav?v=3';
 
   const studentVibrationPattern = isLocked
     ? [400, 120, 400, 120, 600, 150, 500]
@@ -53,20 +147,17 @@ self.addEventListener('push', function (event) {
             client.postMessage({
               type: 'SUPERVISOR_LOCK_PUSH_RECEIVED',
               locked: isLocked,
+              sessionStatus: sessionStatus,
               title: payload.title,
               body: payload.body,
             });
           });
         }
 
-        // If this phone is currently on the Supervisor screen, do not show or vibrate a push alert
         if (isSupervisorWindow) {
           return;
         }
 
-        // When the app is open or in background (hasOpenClient = true), the client plays the 3.6s
-        // custom distinctive audio directly — so we set silent: true here to prevent the phone's
-        // default notification tone from playing over our custom sound.
         const options = {
           body: payload.body,
           icon: '/sakan-icon-192.png',
@@ -87,8 +178,9 @@ self.addEventListener('push', function (event) {
             },
           ],
           data: {
-            url: '/?lockSound=' + (isLocked ? 'locked' : 'open'),
+            url: '/?lockSound=' + (sessionStatus === 'sent' ? 'locked' : 'open'),
             locked: isLocked,
+            sessionStatus: sessionStatus,
             timestamp: eventTimestamp,
           },
         };
@@ -112,8 +204,6 @@ self.addEventListener('message', function (event) {
     ? [400, 120, 400, 120, 600, 150, 500]
     : [250, 100, 250, 100, 500];
 
-  // silent: true ensures ONLY our 3.6-second distinctive custom audio plays,
-  // never the phone's default notification sound.
   const options = {
     body: data.body || '',
     icon: '/sakan-icon-192.png',
@@ -157,6 +247,7 @@ self.addEventListener('notificationclick', function (event) {
             client.postMessage({
               type: 'SUPERVISOR_LOCK_PUSH_RECEIVED',
               locked: Boolean(event.notification.data && event.notification.data.locked),
+              sessionStatus: event.notification.data && event.notification.data.sessionStatus,
             });
             return client.focus();
           }
