@@ -9,9 +9,6 @@ coverage/
 .env.local
 .env.*
 !.env.example
-firebase-applet-config.json
-firebase-blueprint.json
-firestore.rules
 DRAFT_firestore.rules
 .firebase/
 data/
