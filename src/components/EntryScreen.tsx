@@ -1,24 +1,155 @@
-import React, { useState } from 'react';
-import { motion } from 'motion/react';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import emailjs from '@emailjs/browser';
 import { type DormRoom } from '../types/orders';
 import type { AppEdition } from './TopBar';
+import { OtpVerificationCardDemo } from './InteractiveShowcase';
 import {
   SAVED_STUDENT_NAME_KEY,
   SAVED_STUDENT_ROOM_KEY,
   SAVED_STUDENT_EMAIL_KEY,
 } from './OrderFormCard';
 import {
+  isEmailJsConfigured,
+  formatEmailJsError,
+  OTP_EXPIRY_MS,
+  OTP_RESEND_COOLDOWN_SECONDS,
+  MAX_AUTH_ATTEMPTS,
   sanitizeTextInput,
   normalizeDormRoomInput,
   toEnglishDigits,
+  validateEmailInput,
+  validatePasswordInput,
   validateStudentProfileInput,
+  evaluateAttemptRateLimit,
   createVerifiedSessionPayload,
+  hashPassword,
+  verifyPasswordHash,
   type RegisteredStudentAccountRecord,
 } from '../utils/emailOtpService';
 
-export const REGISTERED_ACCOUNTS_KEY = 'sakan_registered_student_accounts_v4';
-export const VERIFIED_SESSION_STORAGE_KEY = 'sakan_verified_session_v9';
-export const SAVED_STUDENT_PASSWORD_KEY = 'sakan_saved_student_password_v1';
+export const REGISTERED_ACCOUNTS_KEY = 'sakan_registered_student_accounts_v20';
+const LEGACY_REGISTERED_ACCOUNTS_V1 = 'sakan_registered_student_accounts_v1';
+const LEGACY_REGISTERED_ACCOUNTS_V2 = 'sakan_registered_student_accounts_v2';
+const LEGACY_REGISTERED_ACCOUNTS_V3 = 'sakan_registered_student_accounts_v3';
+export const VERIFIED_SESSION_STORAGE_KEY = 'sakan_verified_session_v20';
+export const SAVED_STUDENT_PASSWORD_KEY = 'sakan_saved_student_password_v20';
+
+// Load EmailJS credentials from import.meta.env
+const EMAILJS_SERVICE_ID =
+  (import.meta.env.VITE_EMAILJS_SERVICE_ID as string | undefined)?.trim() || '';
+const EMAILJS_TEMPLATE_ID =
+  (import.meta.env.VITE_EMAILJS_TEMPLATE_ID as string | undefined)?.trim() || '';
+const EMAILJS_PUBLIC_KEY =
+  (import.meta.env.VITE_EMAILJS_PUBLIC_KEY as string | undefined)?.trim() || '';
+
+interface EmailJsSendOutcome {
+  ok: boolean;
+  configured: boolean;
+  errorAr?: string;
+}
+
+async function sendOtpViaEmailJS(
+  targetEmail: string,
+  otpCode: string,
+  studentName?: string
+): Promise<EmailJsSendOutcome> {
+  const configured = isEmailJsConfigured({
+    serviceId: EMAILJS_SERVICE_ID,
+    templateId: EMAILJS_TEMPLATE_ID,
+    publicKey: EMAILJS_PUBLIC_KEY,
+  });
+
+  if (!configured) {
+    return { ok: false, configured: false };
+  }
+
+  try {
+    const cleanEmail = sanitizeTextInput(targetEmail, 120);
+    const cleanName = sanitizeTextInput(studentName || cleanEmail.split('@')[0], 60);
+    const response = await emailjs.send(
+      EMAILJS_SERVICE_ID,
+      EMAILJS_TEMPLATE_ID,
+      {
+        to_email: cleanEmail,
+        email: cleanEmail,
+        user_email: cleanEmail,
+        to_name: cleanName,
+        otp_code: otpCode,
+        code: otpCode,
+        passcode: otpCode,
+        app_name: 'talabat el sakan — STEM EL ARISH',
+        message: `رمز التحقق المكون من 4 أرقام لتأكيد حسابك في طلبات السكن (talabat el sakan) هو: ${otpCode} (صالح لمدة 5 دقائق)`,
+      },
+      {
+        publicKey: EMAILJS_PUBLIC_KEY,
+      }
+    );
+    if (response.status >= 200 && response.status < 300) {
+      return { ok: true, configured: true };
+    }
+    const formatted = formatEmailJsError(response);
+    return {
+      ok: false,
+      configured: true,
+      errorAr: formatted.messageAr,
+    };
+  } catch (err: unknown) {
+    const formatted = formatEmailJsError(err);
+    return {
+      ok: false,
+      configured: true,
+      errorAr: formatted.messageAr,
+    };
+  }
+}
+
+async function triggerPhoneOtpNotification(email: string, otpCode: string): Promise<void> {
+  try {
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate([200, 100, 200]);
+    }
+  } catch {
+    // ignore vibration errors
+  }
+
+  try {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Notification.permission === 'default') {
+      try {
+        await Notification.requestPermission();
+      } catch {
+        // ignore
+      }
+    }
+    if (Notification.permission === 'granted') {
+      const title = `📩 كود التحقق (OTP): ${otpCode}`;
+      const body = `رمز تأكيد حسابك (${email}) في طلبات السكن هو: ${otpCode}`;
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg && typeof reg.showNotification === 'function') {
+          await reg.showNotification(title, {
+            body,
+            icon: '/sakan-icon-192.png',
+            badge: '/sakan-icon-192.png',
+            dir: 'rtl',
+            lang: 'ar',
+            tag: 'sakan-otp-' + Date.now(),
+          });
+          return;
+        }
+      }
+      new Notification(title, {
+        body,
+        icon: '/sakan-icon-192.png',
+        dir: 'rtl',
+        lang: 'ar',
+      });
+    }
+  } catch {
+    // ignore notification errors
+  }
+}
 
 export interface StoredStudentAccount extends RegisteredStudentAccountRecord {
   room: DormRoom;
@@ -27,15 +158,82 @@ export interface StoredStudentAccount extends RegisteredStudentAccountRecord {
 export function loadRegisteredAccounts(): Record<string, StoredStudentAccount> {
   if (typeof window === 'undefined') return {};
   try {
+    localStorage.removeItem(LEGACY_REGISTERED_ACCOUNTS_V1);
+    localStorage.removeItem(LEGACY_REGISTERED_ACCOUNTS_V2);
+    localStorage.removeItem(LEGACY_REGISTERED_ACCOUNTS_V3);
     const raw = localStorage.getItem(REGISTERED_ACCOUNTS_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return {};
-    return parsed as Record<string, StoredStudentAccount>;
+    const safeMap: Record<string, StoredStudentAccount> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (v && typeof v === 'object') {
+        const rec = v as Partial<StoredStudentAccount>;
+        const cleanEmail = sanitizeTextInput(String(rec.email || k), 120).toLowerCase();
+        const cleanName = sanitizeTextInput(String(rec.name || ''), 60);
+        const cleanRoom = normalizeDormRoomInput(String(rec.room || ''));
+        const passwordHash = typeof rec.passwordHash === 'string' ? rec.passwordHash : '';
+        if (
+          cleanEmail &&
+          cleanName &&
+          cleanRoom &&
+          passwordHash.startsWith('sakan_hash_v1$')
+        ) {
+          safeMap[cleanEmail] = {
+            email: cleanEmail,
+            name: cleanName,
+            room: cleanRoom as DormRoom,
+            passwordHash,
+            createdAt: typeof rec.createdAt === 'number' ? rec.createdAt : Date.now(),
+            updatedAt: typeof rec.updatedAt === 'number' ? rec.updatedAt : Date.now(),
+          };
+        }
+      }
+    }
+    return safeMap;
   } catch {
     return {};
   }
 }
+
+function saveRegisteredAccountsMap(map: Record<string, StoredStudentAccount>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(LEGACY_REGISTERED_ACCOUNTS_V1);
+    localStorage.removeItem(LEGACY_REGISTERED_ACCOUNTS_V2);
+    localStorage.setItem(REGISTERED_ACCOUNTS_KEY, JSON.stringify(map));
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+function persistActiveStudentSessionToLocalStorage(account: StoredStudentAccount): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const cleanName = sanitizeTextInput(account.name, 60);
+    const cleanEmail = sanitizeTextInput(account.email, 120).toLowerCase();
+    localStorage.setItem(SAVED_STUDENT_NAME_KEY, cleanName);
+    localStorage.setItem(SAVED_STUDENT_ROOM_KEY, account.room);
+    localStorage.setItem(SAVED_STUDENT_EMAIL_KEY, cleanEmail);
+
+    const map = loadRegisteredAccounts();
+    map[cleanEmail] = account;
+    saveRegisteredAccountsMap(map);
+
+    const verifiedSession = createVerifiedSessionPayload(cleanEmail, cleanName, account.room);
+    localStorage.setItem(VERIFIED_SESSION_STORAGE_KEY, JSON.stringify(verifiedSession));
+  } catch {
+    // ignore storage quota or private mode errors
+  }
+}
+
+type AuthViewStep =
+  | 'login'
+  | 'signup'
+  | 'otp-signup'
+  | 'forgot-email'
+  | 'otp-reset'
+  | 'reset-password';
 
 interface EntryScreenProps {
   initialName: string;
@@ -46,32 +244,104 @@ interface EntryScreenProps {
 }
 
 export const EntryScreen: React.FC<EntryScreenProps> = ({
-  initialName,
-  initialRoom,
   onSaveStudentProfileAndEnter,
   onEnterEdition,
 }) => {
-  const [name, setName] = useState<string>(() => {
-    if (initialName) return initialName;
-    try {
-      return localStorage.getItem(SAVED_STUDENT_NAME_KEY) || '';
-    } catch {
-      return '';
-    }
-  });
+  const [step, setStep] = useState<AuthViewStep>('login');
 
-  const [room, setRoom] = useState<string>(() => {
-    if (initialRoom) return initialRoom.replace(/\D/g, '');
-    try {
-      return (localStorage.getItem(SAVED_STUDENT_ROOM_KEY) || '').replace(/\D/g, '');
-    } catch {
-      return '';
-    }
-  });
-
+  const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
+  const [newPassword, setNewPassword] = useState<string>('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState<string>('');
+  const [name, setName] = useState<string>('');
+  const [room, setRoom] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [successNotice, setSuccessNotice] = useState<string | null>(null);
+
   const [isLampOn, setIsLampOn] = useState<boolean>(true);
   const [isSwinging, setIsSwinging] = useState<boolean>(false);
+
+  // OTP state for Sign Up (4-digit OTP) and Forgot Password (OTP recovery)
+  const [sentOtpCode, setSentOtpCode] = useState<string>('');
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number>(0);
+  const [autoFillOtpCode, setAutoFillOtpCode] = useState<string | null>(null);
+  const [isOtpVerifiedForReset, setIsOtpVerifiedForReset] = useState<boolean>(false);
+  const [isSendingOtp, setIsSendingOtp] = useState<boolean>(false);
+
+  // Rate Limit: 60-second cooldown on OTP sending + max 3 failed attempts lockout for 60s
+  const [, setSendCooldownSeconds] = useState<number>(0);
+  const [authFailedAttempts, setAuthFailedAttempts] = useState<number>(0);
+  const [authLockedUntilMs, setAuthLockedUntilMs] = useState<number>(0);
+  const [nowTick, setNowTick] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowTick(Date.now());
+      setSendCooldownSeconds((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const authLockoutSeconds =
+    authLockedUntilMs > nowTick
+      ? Math.max(1, Math.ceil((authLockedUntilMs - nowTick) / 1000))
+      : 0;
+
+  const playIncomingMailSound = () => {
+    try {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12);
+      gain.gain.setValueAtTime(0.14, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.42);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.42);
+    } catch {
+      // ignore audio errors
+    }
+  };
+
+  const dispatchGmailVerificationMessage = async (
+    targetEmail: string,
+    targetName?: string
+  ): Promise<string> => {
+    setIsSendingOtp(true);
+    setAutoFillOtpCode(null);
+
+    const immediateCode = String(Math.floor(1000 + Math.random() * 9000));
+    const nextExpiresAt = Date.now() + OTP_EXPIRY_MS;
+    setSentOtpCode(immediateCode);
+    setOtpExpiresAt(nextExpiresAt);
+    setSendCooldownSeconds(OTP_RESEND_COOLDOWN_SECONDS);
+
+    playIncomingMailSound();
+    void triggerPhoneOtpNotification(targetEmail, immediateCode);
+
+    const cleanName = sanitizeTextInput(targetName || name || targetEmail.split('@')[0], 60);
+    void sendOtpViaEmailJS(targetEmail, immediateCode, cleanName);
+    void fetch('/api/auth/send-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: targetEmail,
+        code: immediateCode,
+        name: cleanName,
+        room: normalizeDormRoomInput(room) || sanitizeTextInput(room, 16),
+      }),
+    }).catch(() => {});
+
+    setIsSendingOtp(false);
+    return immediateCode;
+  };
 
   const handleToggleLamp = () => {
     setIsSwinging(true);
@@ -80,31 +350,293 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     window.setTimeout(() => setIsSwinging(false), 750);
   };
 
-  const handleEnterSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const recordFailedAttemptAndSetError = (customReasonAr: string) => {
+    const now = Date.now();
+    const rate = evaluateAttemptRateLimit(
+      authFailedAttempts,
+      authLockedUntilMs,
+      now,
+      MAX_AUTH_ATTEMPTS
+    );
+    setAuthFailedAttempts(rate.nextFailedAttempts);
+    setAuthLockedUntilMs(rate.nextLockedUntilMs);
+    if (rate.isLocked) {
+      setError(
+        `🔒 تم إيقاف المحاولة مؤقتاً لمدة ${rate.remainingSeconds} ثانية لتجاوز الحد الأقصى (${MAX_AUTH_ATTEMPTS} محاولات خاطئة).`
+      );
+    } else {
+      const remainingTries = Math.max(1, MAX_AUTH_ATTEMPTS - rate.nextFailedAttempts);
+      setError(`${customReasonAr} (متبقي ${remainingTries} محاولات قبل الإيقاف المؤقت).`);
+    }
+  };
 
-    const profileCheck = validateStudentProfileInput(name, room);
-    if (!profileCheck.valid) {
-      setError(profileCheck.errorAr || 'من فضلك اكتب الاسم ثنائي ورقم الغرفة بشكل صحيح.');
+  // 1. Sign Up Submit -> Sends 4-digit OTP and opens OTP verification screen
+  const handleSignUpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSendingOtp) return;
+    setSuccessNotice(null);
+
+    const now = Date.now();
+    if (authLockedUntilMs > now) {
+      const rem = Math.max(1, Math.ceil((authLockedUntilMs - now) / 1000));
+      setError(`🔒 تم إيقاف المحاولة مؤقتاً لمدة ${rem} ثانية لتجاوز عدد المحاولات المسموح (${MAX_AUTH_ATTEMPTS} محاولات).`);
       return;
     }
 
-    const cleanName = sanitizeTextInput(profileCheck.sanitizedName, 60);
-    const cleanRoom = normalizeDormRoomInput(profileCheck.sanitizedRoom) as DormRoom;
-    const defaultEmail = 'student@sakan.local';
-
     try {
-      localStorage.setItem(SAVED_STUDENT_NAME_KEY, cleanName);
-      localStorage.setItem(SAVED_STUDENT_ROOM_KEY, cleanRoom);
-      localStorage.setItem(SAVED_STUDENT_EMAIL_KEY, defaultEmail);
-      const verifiedSession = createVerifiedSessionPayload(defaultEmail, cleanName, cleanRoom);
-      localStorage.setItem(VERIFIED_SESSION_STORAGE_KEY, JSON.stringify(verifiedSession));
+      const profileCheck = validateStudentProfileInput(name, room);
+      if (!profileCheck.valid) {
+        setError(profileCheck.errorAr || 'من فضلك اكتب الاسم ورقم الغرفة بشكل صحيح.');
+        return;
+      }
+
+      const emailCheck = validateEmailInput(email);
+      if (!emailCheck.valid) {
+        setError(emailCheck.errorAr || 'يرجى إدخال بريد إلكتروني صحيح.');
+        return;
+      }
+
+      const passCheck = validatePasswordInput(password);
+      if (!passCheck.valid) {
+        setError(passCheck.errorAr || 'يرجى إدخال كلمة مرور قوية (6 أحرف أو أرقام على الأقل).');
+        return;
+      }
+
+      const accounts = loadRegisteredAccounts();
+      if (accounts[emailCheck.sanitized]) {
+        setError('هذا البريد الإلكتروني مسجل مسبقاً — يرجى تسجيل الدخول.');
+        return;
+      }
+
+      setError(null);
+      await dispatchGmailVerificationMessage(emailCheck.sanitized, profileCheck.sanitizedName);
+      setStep('otp-signup');
     } catch {
-      // ignore storage quota errors
+      setError('حدث خطأ غير متوقع أثناء بدء إنشاء الحساب — يرجى المحاولة مرة أخرى.');
+    }
+  };
+
+  // Complete Sign Up immediately after 4-digit OTP is verified
+  const finalizeSignUpAfterOtp = () => {
+    try {
+      const emailCheck = validateEmailInput(email);
+      const profileCheck = validateStudentProfileInput(name, room);
+
+      if (!emailCheck.valid || !profileCheck.valid) {
+        setError(profileCheck.errorAr || 'بيانات الحساب غير مكتملة — يرجى المحاولة مرة أخرى.');
+        setStep('signup');
+        return;
+      }
+
+      const passwordHash = hashPassword(password, emailCheck.sanitized);
+      const now = Date.now();
+      const newAccount: StoredStudentAccount = {
+        email: emailCheck.sanitized,
+        name: profileCheck.sanitizedName,
+        room: profileCheck.sanitizedRoom as DormRoom,
+        passwordHash,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      try {
+        localStorage.setItem(SAVED_STUDENT_PASSWORD_KEY, password);
+      } catch {
+        // ignore
+      }
+      persistActiveStudentSessionToLocalStorage(newAccount);
+      setAuthFailedAttempts(0);
+      setAuthLockedUntilMs(0);
+      onSaveStudentProfileAndEnter(
+        newAccount.name,
+        newAccount.room,
+        newAccount.email
+      );
+    } catch {
+      setError('حدث خطأ أثناء حفظ الحساب الجديد — يرجى المحاولة مرة أخرى.');
+    }
+  };
+
+  // 2. Login Submit (تسجيل الدخول: الإيميل + الباسورد فقط)
+  const handleLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSuccessNotice(null);
+
+    const now = Date.now();
+    if (authLockedUntilMs > now) {
+      const rem = Math.max(1, Math.ceil((authLockedUntilMs - now) / 1000));
+      setError(`🔒 تم إيقاف المحاولة مؤقتاً لمدة ${rem} ثانية لتجاوز عدد المحاولات المسموح (${MAX_AUTH_ATTEMPTS} محاولات).`);
+      return;
     }
 
-    setError(null);
-    onSaveStudentProfileAndEnter(cleanName, cleanRoom, defaultEmail);
+    try {
+      const emailCheck = validateEmailInput(email);
+      if (!emailCheck.valid) {
+        recordFailedAttemptAndSetError(emailCheck.errorAr || 'البريد الإلكتروني غير صالح');
+        return;
+      }
+
+      const passCheck = validatePasswordInput(password);
+      if (!passCheck.valid) {
+        recordFailedAttemptAndSetError(passCheck.errorAr || 'يرجى إدخال الباسورد (6 أحرف أو أرقام على الأقل)');
+        return;
+      }
+
+      const accounts = loadRegisteredAccounts();
+      const existingAccount = accounts[emailCheck.sanitized];
+
+      const effectiveName =
+        existingAccount?.name ||
+        sanitizeTextInput(name, 60) ||
+        'طالب السكن';
+      const effectiveRoom =
+        existingAccount?.room ||
+        (normalizeDormRoomInput(room) as DormRoom) ||
+        ('غرفة 404' as DormRoom);
+
+      let activeAccount: StoredStudentAccount;
+
+      if (existingAccount) {
+        const isPasswordMatch = verifyPasswordHash(
+          password,
+          emailCheck.sanitized,
+          existingAccount.passwordHash
+        );
+        if (!isPasswordMatch) {
+          recordFailedAttemptAndSetError('الباسورد غير صحيح لهذا البريد الإلكتروني');
+          return;
+        }
+        activeAccount = {
+          ...existingAccount,
+          updatedAt: Date.now(),
+        };
+      } else {
+        const passwordHash = hashPassword(password, emailCheck.sanitized);
+        const nowMs = Date.now();
+        activeAccount = {
+          email: emailCheck.sanitized,
+          name: effectiveName,
+          room: effectiveRoom,
+          passwordHash,
+          createdAt: nowMs,
+          updatedAt: nowMs,
+        };
+      }
+
+      try {
+        localStorage.setItem(SAVED_STUDENT_PASSWORD_KEY, password);
+      } catch {
+        // ignore
+      }
+
+      setError(null);
+      setAuthFailedAttempts(0);
+      setAuthLockedUntilMs(0);
+      persistActiveStudentSessionToLocalStorage(activeAccount);
+      onSaveStudentProfileAndEnter(
+        activeAccount.name,
+        activeAccount.room,
+        activeAccount.email
+      );
+    } catch {
+      setError('حدث خطأ أثناء تسجيل الدخول — يرجى المحاولة مرة أخرى.');
+    }
+  };
+
+  // 3A. Forgot Password Step 1: Request 4-digit OTP
+  const handleForgotPasswordRequestOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSendingOtp) return;
+    setSuccessNotice(null);
+
+    const now = Date.now();
+    if (authLockedUntilMs > now) {
+      const rem = Math.max(1, Math.ceil((authLockedUntilMs - now) / 1000));
+      setError(`🔒 تم إيقاف المحاولة مؤقتاً لمدة ${rem} ثانية لتجاوز عدد المحاولات المسموح (${MAX_AUTH_ATTEMPTS} محاولات).`);
+      return;
+    }
+
+    try {
+      const emailCheck = validateEmailInput(email);
+      if (!emailCheck.valid) {
+        setError(emailCheck.errorAr || 'يرجى إدخال بريد إلكتروني صحيح.');
+        return;
+      }
+
+      const accounts = loadRegisteredAccounts();
+      const existingAccount = accounts[emailCheck.sanitized];
+
+      setError(null);
+      setIsOtpVerifiedForReset(false);
+      await dispatchGmailVerificationMessage(
+        emailCheck.sanitized,
+        existingAccount?.name || name
+      );
+      setStep('otp-reset');
+    } catch {
+      setError('تعذر إرسال كود استرجاع الحساب — يرجى المحاولة مرة أخرى.');
+    }
+  };
+
+  // 3B. Forgot Password Step 3: Save New Password after OTP verification
+  const handleResetPasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (!isOtpVerifiedForReset || !sentOtpCode) {
+        setError('يرجى التحقق من كود الـ OTP أولاً قبل تعيين كلمة مرور جديدة.');
+        setStep('otp-reset');
+        return;
+      }
+
+      const emailCheck = validateEmailInput(email);
+      if (!emailCheck.valid) {
+        setError('البريد الإلكتروني غير صالح.');
+        setStep('forgot-email');
+        return;
+      }
+
+      const passCheck = validatePasswordInput(newPassword);
+      if (!passCheck.valid) {
+        setError(passCheck.errorAr || 'يرجى إدخال كلمة مرور جديدة قوية (6 أحرف على الأقل).');
+        return;
+      }
+
+      if (confirmNewPassword && confirmNewPassword.trim() !== newPassword.trim()) {
+        setError('كلمتا المرور غير متطابقتين — يرجى التأكد من تطابق كلمة المرور الجديدة.');
+        return;
+      }
+
+      const accounts = loadRegisteredAccounts();
+      const existing = accounts[emailCheck.sanitized];
+      const updatedHash = hashPassword(newPassword, emailCheck.sanitized);
+
+      if (existing) {
+        accounts[emailCheck.sanitized] = {
+          ...existing,
+          passwordHash: updatedHash,
+          updatedAt: Date.now(),
+        };
+        saveRegisteredAccountsMap(accounts);
+      }
+
+      try {
+        localStorage.setItem(SAVED_STUDENT_PASSWORD_KEY, newPassword);
+      } catch {
+        // ignore
+      }
+
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setPassword(newPassword);
+      setIsOtpVerifiedForReset(false);
+      setAuthFailedAttempts(0);
+      setAuthLockedUntilMs(0);
+      setError(null);
+      setSuccessNotice('تم حفظ كلمة المرور الجديدة بنجاح! يمكنك الآن تسجيل الدخول.');
+      setStep('login');
+    } catch {
+      setError('حدث خطأ أثناء حفظ كلمة المرور الجديدة — يرجى المحاولة مرة أخرى.');
+    }
   };
 
   const particles = [
@@ -121,7 +653,8 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
     { id: 11, left: '92%', top: '49%', size: 3, delay: 0.8, duration: 5.6 },
   ];
 
-  const isLitAndRaised = isLampOn;
+  const isLitAndRaised = isLampOn || step === 'otp-signup' || step === 'otp-reset' || step === 'reset-password';
+  const isOtpStep = step === 'otp-signup' || step === 'otp-reset';
 
   return (
     <div
@@ -302,7 +835,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           </motion.p>
         </motion.div>
 
-        {/* Auth Card underneath the lamp (Name + Room only) */}
+        {/* Auth Card underneath the lamp */}
         <motion.div
           initial={false}
           animate={{
@@ -322,97 +855,490 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
           aria-hidden={!isLitAndRaised}
           className="w-full flex flex-col items-center"
         >
-          <div
-            className="w-full max-w-[360px] mx-auto rounded-[24px] px-7 py-7 backdrop-blur-xl space-y-4"
-            style={{
-              backgroundColor: 'rgba(34, 34, 34, 0.76)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              boxShadow: '0 24px 55px rgba(0, 0, 0, 0.65)',
-            }}
-          >
-            <div className="text-center">
-              <h1 className="text-[22px] font-extrabold text-white tracking-tight">
-                تسجيل الدخول
-              </h1>
-            </div>
-
-            <form onSubmit={handleEnterSubmit} className="space-y-3" noValidate>
-              <div dir="rtl">
-                <input
-                  id="entry-login-name"
-                  aria-label="الاسم ثنائي"
-                  type="text"
-                  lang="ar"
-                  dir="rtl"
-                  required
-                  tabIndex={isLitAndRaised ? 0 : -1}
-                  placeholder="الاسم ثنائي"
-                  value={name}
-                  onChange={(e) => {
-                    const rawVal = toEnglishDigits(e.target.value);
-                    if (/[a-zA-Z0-9]/.test(rawVal)) {
-                      setName(rawVal.replace(/[a-zA-Z0-9]/g, ''));
-                      setError('يرجى كتابة الاسم باللغة العربية فقط.');
-                      return;
-                    }
-                    setName(rawVal);
-                    setError(null);
-                  }}
-                  className="w-full h-11 px-4 text-sm bg-[#3a3a3a]/85 border border-white/15 rounded-xl text-white placeholder-neutral-400 focus:outline-none focus:border-[#ffd24c] focus:ring-1 focus:ring-[#ffd24c]/50 transition-all"
-                />
-              </div>
-
-              <div dir="rtl">
-                <input
-                  id="entry-login-room"
-                  aria-label="رقم الغرفة"
-                  type="text"
-                  inputMode="numeric"
-                  dir="ltr"
-                  required
-                  tabIndex={isLitAndRaised ? 0 : -1}
-                  placeholder="رقم الغرفة"
-                  value={room}
-                  onChange={(e) => {
-                    const engDigits = toEnglishDigits(e.target.value).replace(/[^0-9]/g, '');
-                    setRoom(engDigits);
-                    setError(null);
-                  }}
-                  className="w-full h-11 px-4 text-sm font-mono tabular-nums text-right bg-[#3a3a3a]/85 border border-white/15 rounded-xl text-white placeholder-neutral-400 focus:outline-none focus:border-[#ffd24c] focus:ring-1 focus:ring-[#ffd24c]/50 transition-all"
-                />
-              </div>
-
-              {error && (
-                <div
-                  role="alert"
-                  dir="rtl"
-                  className="p-2.5 rounded-xl bg-rose-950/80 border border-rose-500/40 text-xs font-semibold text-rose-200 text-center"
-                >
-                  {error}
-                </div>
-              )}
-
-              <button
-                id="entry-login-submit-btn"
-                type="submit"
-                tabIndex={isLitAndRaised ? 0 : -1}
-                dir="rtl"
-                className="w-full h-11 px-5 text-sm font-extrabold text-[#1c1917] bg-gradient-to-r from-[#ffe47a] via-[#ffd147] to-[#f5a623] hover:brightness-105 rounded-xl shadow-[0_6px_20px_rgba(245,166,35,0.28)] transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 inline-flex items-center justify-center gap-2"
+          <AnimatePresence mode="wait">
+            {isOtpStep ? (
+              /* OTP VERIFICATION CARD */
+              <motion.div
+                key={step}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.25 }}
+                className="w-full space-y-3"
               >
-                <span>دخول السكن وحفظ البيانات</span>
-              </button>
-            </form>
-          </div>
+                <OtpVerificationCardDemo
+                  expectedCode={sentOtpCode}
+                  enforceExpectedMatch={true}
+                  expiresAt={otpExpiresAt}
+                  initialCooldownSeconds={OTP_RESEND_COOLDOWN_SECONDS}
+                  subtitleText=""
+                  autoFillCode={autoFillOtpCode}
+                  onResendOtp={async () => {
+                    await dispatchGmailVerificationMessage(email.trim(), name.trim());
+                  }}
+                  onVerifiedImmediate={() => {
+                    if (step === 'otp-reset') {
+                      setIsOtpVerifiedForReset(true);
+                    }
+                  }}
+                  onVerifiedSuccess={() => {
+                    if (step === 'otp-signup') {
+                      finalizeSignUpAfterOtp();
+                    } else {
+                      setIsOtpVerifiedForReset(true);
+                      setStep('reset-password');
+                    }
+                  }}
+                />
+
+                <div className="text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError(null);
+                      setStep(step === 'otp-signup' ? 'signup' : 'login');
+                    }}
+                    className="text-xs font-semibold text-neutral-400 hover:text-amber-300 transition-colors cursor-pointer"
+                  >
+                    ← الرجوع لتعديل البيانات
+                  </button>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key={step}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.25 }}
+                className="w-full max-w-[360px] mx-auto rounded-[24px] px-7 py-7 backdrop-blur-xl"
+                style={{
+                  backgroundColor: 'rgba(34, 34, 34, 0.76)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  boxShadow: '0 24px 55px rgba(0, 0, 0, 0.65)',
+                }}
+              >
+                {/* Mode Switcher Tabs for Login vs Sign Up */}
+                {(step === 'login' || step === 'signup') && (
+                  <div
+                    dir="rtl"
+                    className="grid grid-cols-2 gap-1.5 p-1 mb-5 rounded-xl bg-black/35 border border-white/10"
+                  >
+                    <button
+                      id="entry-switch-to-login-btn"
+                      type="button"
+                      tabIndex={isLitAndRaised ? 0 : -1}
+                      onClick={() => {
+                        setStep('login');
+                        setError(null);
+                      }}
+                      className={`py-2 text-xs font-extrabold rounded-lg transition-all cursor-pointer ${
+                        step === 'login'
+                          ? 'bg-amber-400 text-slate-950 shadow-sm'
+                          : 'text-neutral-300 hover:text-white'
+                      }`}
+                    >
+                      تسجيل الدخول
+                    </button>
+                    <button
+                      id="entry-switch-to-signup-btn"
+                      type="button"
+                      tabIndex={isLitAndRaised ? 0 : -1}
+                      onClick={() => {
+                        setStep('signup');
+                        setError(null);
+                        setSuccessNotice(null);
+                      }}
+                      className={`py-2 text-xs font-extrabold rounded-lg transition-all cursor-pointer ${
+                        step === 'signup'
+                          ? 'bg-amber-400 text-slate-950 shadow-sm'
+                          : 'text-neutral-300 hover:text-white'
+                      }`}
+                    >
+                      إنشاء حساب
+                    </button>
+                  </div>
+                )}
+
+                {step === 'login' && (
+                  <div className="space-y-4">
+                    <div className="text-center">
+                      <h1 className="text-[22px] font-extrabold text-white tracking-tight">
+                        تسجيل الدخول
+                      </h1>
+                    </div>
+
+                    {successNotice && (
+                      <div
+                        role="status"
+                        dir="rtl"
+                        className="p-2.5 rounded-xl bg-emerald-950/85 border border-emerald-500/40 text-xs font-bold text-emerald-200 text-center"
+                      >
+                        {successNotice}
+                      </div>
+                    )}
+
+                    <form onSubmit={handleLoginSubmit} className="space-y-3" autoComplete="off" noValidate>
+                      <div>
+                        <input
+                          id="entry-student-gmail"
+                          aria-label="Gmail"
+                          type="email"
+                          dir="ltr"
+                          autoComplete="off"
+                          required
+                          disabled={authLockoutSeconds > 0}
+                          tabIndex={isLitAndRaised ? 0 : -1}
+                          placeholder="example@gmail.com"
+                          value={email}
+                          onChange={(e) => {
+                            setEmail(e.target.value);
+                            setError(null);
+                          }}
+                          className="w-full h-11 px-4 text-sm bg-[#3a3a3a]/85 border border-white/15 rounded-xl text-white placeholder-neutral-400 focus:outline-none focus:border-[#ffd24c] focus:ring-1 focus:ring-[#ffd24c]/50 disabled:opacity-60 transition-all"
+                        />
+                      </div>
+
+                      <div>
+                        <input
+                          id="entry-student-password"
+                          aria-label="Password"
+                          type="password"
+                          dir="ltr"
+                          autoComplete="new-password"
+                          required
+                          disabled={authLockoutSeconds > 0}
+                          tabIndex={isLitAndRaised ? 0 : -1}
+                          placeholder="الباسورد"
+                          value={password}
+                          onChange={(e) => {
+                            setPassword(e.target.value);
+                            setError(null);
+                          }}
+                          className="w-full h-11 px-4 text-sm bg-[#3a3a3a]/85 border border-white/15 rounded-xl text-white placeholder-neutral-400 focus:outline-none focus:border-[#ffd24c] focus:ring-1 focus:ring-[#ffd24c]/50 disabled:opacity-60 transition-all"
+                        />
+                      </div>
+
+                      <div dir="rtl" className="flex items-center justify-between">
+                        <button
+                          id="entry-forgot-password-btn"
+                          type="button"
+                          tabIndex={isLitAndRaised ? 0 : -1}
+                          onClick={() => {
+                            setError(null);
+                            setSuccessNotice(null);
+                            setStep('forgot-email');
+                          }}
+                          className="text-xs font-bold text-amber-300 hover:text-amber-200 underline underline-offset-4 transition-colors cursor-pointer"
+                        >
+                          نسيت كلمة المرور؟
+                        </button>
+                      </div>
+
+                      {error && (
+                        <div
+                          role="alert"
+                          dir="rtl"
+                          className="p-2.5 rounded-xl bg-rose-950/80 border border-rose-500/40 text-xs font-semibold text-rose-200 text-center"
+                        >
+                          {error}
+                        </div>
+                      )}
+
+                      <button
+                        id="entry-login-submit-btn"
+                        type="submit"
+                        disabled={authLockoutSeconds > 0}
+                        tabIndex={isLitAndRaised ? 0 : -1}
+                        dir="rtl"
+                        className="w-full h-11 px-5 text-sm font-extrabold text-[#1c1917] bg-gradient-to-r from-[#ffe47a] via-[#ffd147] to-[#f5a623] hover:brightness-105 disabled:opacity-75 disabled:cursor-not-allowed rounded-xl shadow-[0_6px_20px_rgba(245,166,35,0.28)] transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 inline-flex items-center justify-center gap-2"
+                      >
+                        {authLockoutSeconds > 0 ? (
+                          <span>مغلق مؤقتاً ({authLockoutSeconds} ث)</span>
+                        ) : (
+                          <span>تسجيل الدخول</span>
+                        )}
+                      </button>
+                    </form>
+                  </div>
+                )}
+
+                {step === 'signup' && (
+                  <div className="space-y-4">
+                    <div className="text-center">
+                      <h1 className="text-[22px] font-extrabold text-white tracking-tight">
+                        إنشاء حساب جديد
+                      </h1>
+                    </div>
+
+                    <form onSubmit={handleSignUpSubmit} className="space-y-3" autoComplete="off" noValidate>
+                      <div dir="rtl">
+                        <input
+                          id="entry-signup-name"
+                          aria-label="الاسم ثنائي (Full Name)"
+                          type="text"
+                          lang="ar"
+                          dir="rtl"
+                          autoComplete="off"
+                          required
+                          disabled={isSendingOtp || authLockoutSeconds > 0}
+                          tabIndex={isLitAndRaised ? 0 : -1}
+                          placeholder="الاسم ثنائي"
+                          value={name}
+                          onChange={(e) => {
+                            const rawVal = toEnglishDigits(e.target.value);
+                            if (/[a-zA-Z0-9]/.test(rawVal)) {
+                              setName(rawVal.replace(/[a-zA-Z0-9]/g, ''));
+                              setError('يرجى كتابة الاسم باللغة العربية فقط.');
+                              return;
+                            }
+                            setName(rawVal);
+                            setError(null);
+                          }}
+                          className="w-full h-11 px-4 text-sm bg-[#3a3a3a]/85 border border-white/15 rounded-xl text-white placeholder-neutral-400 focus:outline-none focus:border-[#ffd24c] focus:ring-1 focus:ring-[#ffd24c]/50 disabled:opacity-60"
+                        />
+                      </div>
+
+                      <div dir="rtl">
+                        <input
+                          id="entry-signup-room"
+                          aria-label="رقم الغرفة (Room Number)"
+                          type="text"
+                          inputMode="numeric"
+                          dir="ltr"
+                          autoComplete="off"
+                          required
+                          disabled={isSendingOtp || authLockoutSeconds > 0}
+                          tabIndex={isLitAndRaised ? 0 : -1}
+                          placeholder="رقم الغرفة"
+                          value={room}
+                          onChange={(e) => {
+                            const engDigits = toEnglishDigits(e.target.value).replace(/[^0-9]/g, '');
+                            setRoom(engDigits);
+                            setError(null);
+                          }}
+                          className="w-full h-11 px-4 text-sm font-mono tabular-nums text-right bg-[#3a3a3a]/85 border border-white/15 rounded-xl text-white placeholder-neutral-400 focus:outline-none focus:border-[#ffd24c] focus:ring-1 focus:ring-[#ffd24c]/50 disabled:opacity-60"
+                        />
+                      </div>
+
+                      <div>
+                        <input
+                          id="entry-student-gmail"
+                          aria-label="Gmail"
+                          type="email"
+                          dir="ltr"
+                          autoComplete="off"
+                          required
+                          disabled={isSendingOtp || authLockoutSeconds > 0}
+                          tabIndex={isLitAndRaised ? 0 : -1}
+                          placeholder="example@gmail.com"
+                          value={email}
+                          onChange={(e) => {
+                            setEmail(e.target.value);
+                            setError(null);
+                          }}
+                          className="w-full h-11 px-4 text-sm bg-[#3a3a3a]/85 border border-white/15 rounded-xl text-white placeholder-neutral-400 focus:outline-none focus:border-[#ffd24c] focus:ring-1 focus:ring-[#ffd24c]/50 disabled:opacity-60 transition-all"
+                        />
+                      </div>
+
+                      <div>
+                        <input
+                          id="entry-student-password"
+                          aria-label="Password"
+                          type="password"
+                          dir="ltr"
+                          autoComplete="new-password"
+                          required
+                          disabled={isSendingOtp || authLockoutSeconds > 0}
+                          tabIndex={isLitAndRaised ? 0 : -1}
+                          placeholder="الباسورد"
+                          value={password}
+                          onChange={(e) => {
+                            setPassword(e.target.value);
+                            setError(null);
+                          }}
+                          className="w-full h-11 px-4 text-sm bg-[#3a3a3a]/85 border border-white/15 rounded-xl text-white placeholder-neutral-400 focus:outline-none focus:border-[#ffd24c] focus:ring-1 focus:ring-[#ffd24c]/50 disabled:opacity-60 transition-all"
+                        />
+                      </div>
+
+                      {error && (
+                        <div
+                          role="alert"
+                          dir="rtl"
+                          className="p-2.5 rounded-xl bg-rose-950/80 border border-rose-500/40 text-xs font-semibold text-rose-200 text-center"
+                        >
+                          {error}
+                        </div>
+                      )}
+
+                      <button
+                        id="entry-signup-submit-btn"
+                        type="submit"
+                        disabled={isSendingOtp || authLockoutSeconds > 0}
+                        aria-busy={isSendingOtp}
+                        tabIndex={isLitAndRaised ? 0 : -1}
+                        dir="rtl"
+                        className="w-full h-11 px-5 text-sm font-extrabold text-[#1c1917] bg-gradient-to-r from-[#ffe47a] via-[#ffd147] to-[#f5a623] hover:brightness-105 disabled:opacity-75 disabled:cursor-not-allowed rounded-xl shadow-[0_6px_20px_rgba(245,166,35,0.28)] transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 inline-flex items-center justify-center gap-2.5"
+                      >
+                        {authLockoutSeconds > 0 ? (
+                          <span>مغلق مؤقتاً ({authLockoutSeconds} ث)</span>
+                        ) : (
+                          <span>إرسال كود التحقق (OTP)</span>
+                        )}
+                      </button>
+                    </form>
+                  </div>
+                )}
+
+                {step === 'forgot-email' && (
+                  <div className="space-y-4">
+                    <div className="text-center">
+                      <h2 className="text-xl font-extrabold text-white tracking-tight">
+                        استرجاع كلمة المرور
+                      </h2>
+                    </div>
+
+                    <form onSubmit={handleForgotPasswordRequestOtp} className="space-y-3.5" noValidate>
+                      <div>
+                        <input
+                          id="entry-forgot-email-input"
+                          aria-label="Registered Gmail"
+                          type="email"
+                          dir="ltr"
+                          required
+                          disabled={isSendingOtp || authLockoutSeconds > 0}
+                          placeholder="example@gmail.com"
+                          value={email}
+                          onChange={(e) => {
+                            setEmail(e.target.value);
+                            setError(null);
+                          }}
+                          className="w-full h-11 px-4 text-sm bg-[#3a3a3a]/85 border border-white/15 rounded-xl text-white placeholder-neutral-400 focus:outline-none focus:border-[#ffd24c] focus:ring-1 focus:ring-[#ffd24c]/50"
+                        />
+                      </div>
+
+                      {error && (
+                        <div
+                          role="alert"
+                          dir="rtl"
+                          className="p-2.5 rounded-xl bg-rose-950/80 border border-rose-500/40 text-xs font-semibold text-rose-200 text-center"
+                        >
+                          {error}
+                        </div>
+                      )}
+
+                      <button
+                        id="entry-forgot-send-otp-btn"
+                        type="submit"
+                        disabled={isSendingOtp || authLockoutSeconds > 0}
+                        aria-busy={isSendingOtp}
+                        dir="rtl"
+                        className="w-full h-11 px-5 text-sm font-extrabold text-[#1c1917] bg-gradient-to-r from-[#ffe47a] via-[#ffd147] to-[#f5a623] hover:brightness-105 disabled:opacity-75 rounded-xl shadow-[0_6px_20px_rgba(245,166,35,0.28)] transition-all cursor-pointer inline-flex items-center justify-center gap-2"
+                      >
+                        {authLockoutSeconds > 0 ? (
+                          <span>مغلق مؤقتاً ({authLockoutSeconds} ث)</span>
+                        ) : (
+                          <span>إرسال كود التحقق (OTP)</span>
+                        )}
+                      </button>
+
+                      <div className="text-center pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setError(null);
+                            setStep('login');
+                          }}
+                          className="text-xs font-semibold text-neutral-400 hover:text-amber-300 transition-colors cursor-pointer"
+                        >
+                          ← الرجوع لتسجيل الدخول
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {step === 'reset-password' && (
+                  <div className="space-y-4">
+                    <div className="text-center space-y-1">
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-[11px] font-extrabold text-emerald-300">
+                        <span>✓ تم التحقق من الكود بنجاح</span>
+                      </div>
+                      <h2 className="text-xl font-extrabold text-white tracking-tight pt-1">
+                        تعيين كلمة مرور جديدة
+                      </h2>
+                    </div>
+
+                    <form onSubmit={handleResetPasswordSubmit} className="space-y-3.5" noValidate>
+                      <div>
+                        <input
+                          id="entry-new-password-input"
+                          aria-label="كلمة المرور الجديدة"
+                          type="password"
+                          dir="ltr"
+                          required
+                          placeholder="كلمة المرور الجديدة"
+                          value={newPassword}
+                          onChange={(e) => {
+                            setNewPassword(e.target.value);
+                            setError(null);
+                          }}
+                          className="w-full h-11 px-4 text-sm bg-[#3a3a3a]/85 border border-white/15 rounded-xl text-white placeholder-neutral-400 focus:outline-none focus:border-[#ffd24c] focus:ring-1 focus:ring-[#ffd24c]/50"
+                        />
+                      </div>
+
+                      <div>
+                        <input
+                          id="entry-confirm-new-password-input"
+                          aria-label="تأكيد كلمة المرور الجديدة"
+                          type="password"
+                          dir="ltr"
+                          placeholder="تأكيد كلمة المرور الجديدة"
+                          value={confirmNewPassword}
+                          onChange={(e) => {
+                            setConfirmNewPassword(e.target.value);
+                            setError(null);
+                          }}
+                          className="w-full h-11 px-4 text-sm bg-[#3a3a3a]/85 border border-white/15 rounded-xl text-white placeholder-neutral-400 focus:outline-none focus:border-[#ffd24c] focus:ring-1 focus:ring-[#ffd24c]/50"
+                        />
+                      </div>
+
+                      {error && (
+                        <div
+                          role="alert"
+                          dir="rtl"
+                          className="p-2.5 rounded-xl bg-rose-950/80 border border-rose-500/40 text-xs font-semibold text-rose-200 text-center"
+                        >
+                          {error}
+                        </div>
+                      )}
+
+                      <button
+                        id="entry-save-new-password-btn"
+                        type="submit"
+                        dir="rtl"
+                        className="w-full h-11 px-5 text-sm font-extrabold text-[#1c1917] bg-gradient-to-r from-[#ffe47a] via-[#ffd147] to-[#f5a623] hover:brightness-105 rounded-xl shadow-[0_6px_20px_rgba(245,166,35,0.28)] transition-all cursor-pointer"
+                      >
+                        حفظ كلمة المرور وتوجه لتسجيل الدخول
+                      </button>
+                    </form>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Subtle Supervisor Edition entry button below the card */}
-          <button
-            type="button"
-            tabIndex={isLitAndRaised ? 0 : -1}
-            onClick={() => onEnterEdition('master')}
-            className="mt-4 px-4 py-1.5 text-xs font-semibold text-neutral-400 hover:text-[#ffd24c] transition-colors cursor-pointer"
-          >
-            دخول نسخة المشرف
-          </button>
+          {!isOtpStep && (
+            <button
+              type="button"
+              tabIndex={isLitAndRaised ? 0 : -1}
+              onClick={() => onEnterEdition('master')}
+              className="mt-4 px-4 py-1.5 text-xs font-semibold text-neutral-400 hover:text-[#ffd24c] transition-colors cursor-pointer"
+            >
+              دخول نسخة المشرف
+            </button>
+          )}
         </motion.div>
       </div>
     </div>

@@ -9,9 +9,9 @@ import {
 import { validateOrderItemInput, findSyrianMenuItem } from '../utils/orderAggregator';
 import { normalizeDormRoomInput, toEnglishDigits } from '../utils/emailOtpService';
 
-export const SAVED_STUDENT_NAME_KEY = 'sakan_saved_student_name_v3';
-export const SAVED_STUDENT_ROOM_KEY = 'sakan_saved_student_room_v3';
-export const SAVED_STUDENT_EMAIL_KEY = 'sakan_saved_student_email_v3';
+export const SAVED_STUDENT_NAME_KEY = 'sakan_saved_student_name_v10';
+export const SAVED_STUDENT_ROOM_KEY = 'sakan_saved_student_room_v10';
+export const SAVED_STUDENT_EMAIL_KEY = 'sakan_saved_student_email_v10';
 
 interface OrderFormCardProps {
   formRef?: React.RefObject<HTMLFormElement | null>;

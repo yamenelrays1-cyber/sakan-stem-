@@ -23,8 +23,23 @@ import {
   serverTimestamp,
   type Unsubscribe,
 } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
 import type { RoommateOrderItem, SessionStatus } from '../types/orders';
+
+const firebaseConfig = {
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'gen-lang-client-0265025778',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:95540180740:web:c206c37d33aa1b9d748251',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyCi0C79esQwD8Pya6D6B-4vHaayi0i0pBA',
+  authDomain:
+    import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'gen-lang-client-0265025778.firebaseapp.com',
+  firestoreDatabaseId:
+    import.meta.env.VITE_FIREBASE_DATABASE_ID ||
+    'ai-studio-ccc0553f-b13f-46a4-b683-153bfde9bb70',
+  storageBucket:
+    import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ||
+    'gen-lang-client-0265025778.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '95540180740',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || '',
+};
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
@@ -32,7 +47,7 @@ export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
 export const DEFAULT_HOUSE_ID = 'stem_elarish_house_404_410';
-export const DEFAULT_SESSION_ID = 'sakan_orders_2026_clean_v5';
+export const DEFAULT_SESSION_ID = 'sakan_orders_2026_clean_v10';
 export const DEFAULT_JOIN_CODE = '404410';
 export const SUPERVISOR_JOIN_CODE = '0902';
 

@@ -127,8 +127,8 @@ function getOrCreatePhoneDeviceId(): string {
   }
 }
 
-const STANDALONE_LOGIN_DONE_KEY = 'sakan_standalone_login_completed_v9';
-const BROWSER_LOGIN_DONE_KEY = 'sakan_browser_login_completed_v9';
+const STANDALONE_LOGIN_DONE_KEY = 'sakan_standalone_login_completed_v20';
+const BROWSER_LOGIN_DONE_KEY = 'sakan_browser_login_completed_v20';
 
 // One-time cleanup of legacy student profile keys and unverified login flags
 if (typeof window !== 'undefined') {
