@@ -258,7 +258,7 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
 
-  const [isLampOn, setIsLampOn] = useState<boolean>(true);
+  const [isLampOn, setIsLampOn] = useState<boolean>(false);
   const [isSwinging, setIsSwinging] = useState<boolean>(false);
 
   // OTP state for Sign Up (4-digit OTP) and Forgot Password (OTP recovery)

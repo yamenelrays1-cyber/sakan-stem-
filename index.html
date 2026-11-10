@@ -6,10 +6,10 @@
     <script>
       (function () {
         try {
-          if (localStorage.getItem('sakan_pwa_cache_v26') !== '1') {
+          if (localStorage.getItem('sakan_pwa_cache_v27') !== '1') {
             localStorage.clear();
             sessionStorage.clear();
-            localStorage.setItem('sakan_pwa_cache_v26', '1');
+            localStorage.setItem('sakan_pwa_cache_v27', '1');
             if ('caches' in window) {
               caches.keys().then(function (keys) {
                 return Promise.all(keys.map(function (k) { return caches.delete(k); }));
@@ -21,7 +21,7 @@
         } catch (e) {}
         if ('serviceWorker' in navigator) {
           navigator.serviceWorker
-            .register('/push-sw.js?v=26', { scope: '/', updateViaCache: 'none' })
+            .register('/push-sw.js?v=27', { scope: '/', updateViaCache: 'none' })
             .then(function (reg) {
               reg.update().catch(function () {});
             })
