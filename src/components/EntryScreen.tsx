@@ -35,13 +35,13 @@ const LEGACY_REGISTERED_ACCOUNTS_V3 = 'sakan_registered_student_accounts_v3';
 export const VERIFIED_SESSION_STORAGE_KEY = 'sakan_verified_session_v20';
 export const SAVED_STUDENT_PASSWORD_KEY = 'sakan_saved_student_password_v20';
 
-// Load EmailJS credentials from import.meta.env
+// EmailJS configuration (reads env overrides if provided, defaults to project EmailJS account)
 const EMAILJS_SERVICE_ID =
-  (import.meta.env.VITE_EMAILJS_SERVICE_ID as string | undefined)?.trim() || '';
+  (import.meta.env.VITE_EMAILJS_SERVICE_ID as string | undefined)?.trim() || 'service_740ewfp';
 const EMAILJS_TEMPLATE_ID =
-  (import.meta.env.VITE_EMAILJS_TEMPLATE_ID as string | undefined)?.trim() || '';
+  (import.meta.env.VITE_EMAILJS_TEMPLATE_ID as string | undefined)?.trim() || 'template_dzloey5';
 const EMAILJS_PUBLIC_KEY =
-  (import.meta.env.VITE_EMAILJS_PUBLIC_KEY as string | undefined)?.trim() || '';
+  (import.meta.env.VITE_EMAILJS_PUBLIC_KEY as string | undefined)?.trim() || '_SN178QkGFdMU8a4u';
 
 interface EmailJsSendOutcome {
   ok: boolean;
@@ -51,8 +51,8 @@ interface EmailJsSendOutcome {
 
 async function sendOtpViaEmailJS(
   targetEmail: string,
-  otpCode: string,
-  studentName?: string
+  passcode: string,
+  expiresAtTimestamp: number
 ): Promise<EmailJsSendOutcome> {
   const configured = isEmailJsConfigured({
     serviceId: EMAILJS_SERVICE_ID,
@@ -66,24 +66,21 @@ async function sendOtpViaEmailJS(
 
   try {
     const cleanEmail = sanitizeTextInput(targetEmail, 120);
-    const cleanName = sanitizeTextInput(studentName || cleanEmail.split('@')[0], 60);
+    const expiryDate = new Date(expiresAtTimestamp);
+    const time = expiryDate.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
     const response = await emailjs.send(
       EMAILJS_SERVICE_ID,
       EMAILJS_TEMPLATE_ID,
       {
-        to_email: cleanEmail,
-        email: cleanEmail,
-        user_email: cleanEmail,
-        to_name: cleanName,
-        otp_code: otpCode,
-        code: otpCode,
-        passcode: otpCode,
-        app_name: 'talabat el sakan — STEM EL ARISH',
-        message: `رمز التحقق المكون من 4 أرقام لتأكيد حسابك في طلبات السكن (talabat el sakan) هو: ${otpCode} (صالح لمدة 5 دقائق)`,
+        email: cleanEmail,   // يطابق {{email}} في خانة To Email
+        passcode: passcode,  // يطابق {{passcode}} في نص القالب
+        time: time,          // يطابق {{time}} في نص القالب
       },
-      {
-        publicKey: EMAILJS_PUBLIC_KEY,
-      }
+      EMAILJS_PUBLIC_KEY
     );
     if (response.status >= 200 && response.status < 300) {
       return { ok: true, configured: true };
@@ -92,14 +89,18 @@ async function sendOtpViaEmailJS(
     return {
       ok: false,
       configured: true,
-      errorAr: formatted.messageAr,
+      errorAr: formatted.technicalDetails
+        ? `${formatted.messageAr} (${formatted.technicalDetails})`
+        : formatted.messageAr,
     };
   } catch (err: unknown) {
     const formatted = formatEmailJsError(err);
     return {
       ok: false,
       configured: true,
-      errorAr: formatted.messageAr,
+      errorAr: formatted.technicalDetails
+        ? `${formatted.messageAr} (${formatted.technicalDetails})`
+        : formatted.messageAr,
     };
   }
 }
@@ -313,34 +314,59 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
   const dispatchGmailVerificationMessage = async (
     targetEmail: string,
     targetName?: string
-  ): Promise<string> => {
+  ): Promise<{ ok: boolean; code?: string; errorAr?: string }> => {
     setIsSendingOtp(true);
     setAutoFillOtpCode(null);
 
-    const immediateCode = String(Math.floor(1000 + Math.random() * 9000));
-    const nextExpiresAt = Date.now() + OTP_EXPIRY_MS;
-    setSentOtpCode(immediateCode);
-    setOtpExpiresAt(nextExpiresAt);
-    setSendCooldownSeconds(OTP_RESEND_COOLDOWN_SECONDS);
+    try {
+      // 1. توليد كود OTP عشوائي من 6 أرقام
+      const passcode = Math.floor(100000 + Math.random() * 900000).toString();
+      // 2. حساب وقت الانتهاء بالمللي ثانية (15 دقيقة لمطابقة قالب الإيميل)
+      const expiresAtTimestamp = Date.now() + OTP_EXPIRY_MS;
+      const cleanName = sanitizeTextInput(targetName || name || targetEmail.split('@')[0], 60);
+      const cleanRoom = normalizeDormRoomInput(room) || sanitizeTextInput(room, 16);
 
-    playIncomingMailSound();
-    void triggerPhoneOtpNotification(targetEmail, immediateCode);
+      // Send OTP email exclusively via EmailJS with exact { email, passcode, time }
+      const emailJsOutcome = await sendOtpViaEmailJS(targetEmail, passcode, expiresAtTimestamp);
 
-    const cleanName = sanitizeTextInput(targetName || name || targetEmail.split('@')[0], 60);
-    void sendOtpViaEmailJS(targetEmail, immediateCode, cleanName);
-    void fetch('/api/auth/send-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: targetEmail,
-        code: immediateCode,
-        name: cleanName,
-        room: normalizeDormRoomInput(room) || sanitizeTextInput(room, 16),
-      }),
-    }).catch(() => {});
+      if (!emailJsOutcome.configured) {
+        return {
+          ok: false,
+          errorAr:
+            'بيانات EmailJS غير مكتملة — يرجى إضافة Service ID و Template ID و Public Key في إعدادات البيئة (VITE_EMAILJS_SERVICE_ID, VITE_EMAILJS_TEMPLATE_ID, VITE_EMAILJS_PUBLIC_KEY).',
+        };
+      }
 
-    setIsSendingOtp(false);
-    return immediateCode;
+      if (!emailJsOutcome.ok) {
+        return {
+          ok: false,
+          errorAr:
+            emailJsOutcome.errorAr ||
+            'تعذر إرسال كود التحقق عبر EmailJS — يرجى التأكد من إعدادات القالب والمفاتيح.',
+        };
+      }
+
+      setSentOtpCode(passcode);
+      setOtpExpiresAt(expiresAtTimestamp);
+      setSendCooldownSeconds(OTP_RESEND_COOLDOWN_SECONDS);
+      playIncomingMailSound();
+      void triggerPhoneOtpNotification(targetEmail, passcode);
+      void fetch('/api/auth/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: targetEmail,
+          code: passcode,
+          expiresAt: expiresAtTimestamp,
+          name: cleanName,
+          room: cleanRoom,
+        }),
+      }).catch(() => {});
+
+      return { ok: true, code: passcode };
+    } finally {
+      setIsSendingOtp(false);
+    }
   };
 
   const handleToggleLamp = () => {
@@ -409,7 +435,17 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       }
 
       setError(null);
-      await dispatchGmailVerificationMessage(emailCheck.sanitized, profileCheck.sanitizedName);
+      const sendResult = await dispatchGmailVerificationMessage(
+        emailCheck.sanitized,
+        profileCheck.sanitizedName
+      );
+      if (!sendResult.ok) {
+        setError(
+          sendResult.errorAr ||
+            'تعذر إرسال كود التحقق إلى بريدك الإلكتروني — يرجى التحقق من إعدادات الإيميل.'
+        );
+        return;
+      }
       setStep('otp-signup');
     } catch {
       setError('حدث خطأ غير متوقع أثناء بدء إنشاء الحساب — يرجى المحاولة مرة أخرى.');
@@ -568,10 +604,17 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
 
       setError(null);
       setIsOtpVerifiedForReset(false);
-      await dispatchGmailVerificationMessage(
+      const sendResult = await dispatchGmailVerificationMessage(
         emailCheck.sanitized,
         existingAccount?.name || name
       );
+      if (!sendResult.ok) {
+        setError(
+          sendResult.errorAr ||
+            'تعذر إرسال كود استرجاع الحساب إلى البريد الإلكتروني — يرجى التحقق من إعدادات الإيميل.'
+        );
+        return;
+      }
       setStep('otp-reset');
     } catch {
       setError('تعذر إرسال كود استرجاع الحساب — يرجى المحاولة مرة أخرى.');
@@ -871,10 +914,19 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
                   enforceExpectedMatch={true}
                   expiresAt={otpExpiresAt}
                   initialCooldownSeconds={OTP_RESEND_COOLDOWN_SECONDS}
-                  subtitleText=""
+                  subtitleText={`تم إرسال كود من 6 أرقام إلى ${email.trim()} — راجع صندوق الوارد أو Spam`}
                   autoFillCode={autoFillOtpCode}
                   onResendOtp={async () => {
-                    await dispatchGmailVerificationMessage(email.trim(), name.trim());
+                    const resendResult = await dispatchGmailVerificationMessage(
+                      email.trim(),
+                      name.trim()
+                    );
+                    if (!resendResult.ok) {
+                      throw new Error(
+                        resendResult.errorAr ||
+                          'تعذر إعادة إرسال كود التحقق إلى بريدك الإلكتروني.'
+                      );
+                    }
                   }}
                   onVerifiedImmediate={() => {
                     if (step === 'otp-reset') {

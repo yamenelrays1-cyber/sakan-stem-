@@ -58,19 +58,22 @@ test('formatEmailJsError classifies network, auth, template, and rate-limit erro
   assert.ok(authErr.messageAr.includes('Public Key'));
 });
 
-test('validateOtpCodeInput enforces 4-digit format, strict matching, and 5-minute expiration', () => {
-  assert.equal(validateOtpCodeInput('12').valid, false);
-  assert.equal(validateOtpCodeInput('1234', '5678', true).valid, false);
-  assert.equal(validateOtpCodeInput('5678', '5678', true).valid, true);
-  assert.equal(validateOtpCodeInput('1234', '5678', false).valid, true);
+test('validateOtpCodeInput enforces 6-digit format, strict matching, and 15-minute expiration', () => {
+  assert.equal(OTP_EXPIRY_MS, 15 * 60 * 1000);
+  assert.equal(validateOtpCodeInput('1234').valid, false);
+  assert.equal(validateOtpCodeInput('123456', '654321', true).valid, false);
+  assert.equal(validateOtpCodeInput('654321', '654321', true).valid, true);
+  assert.equal(validateOtpCodeInput('123456', '654321', false).valid, true);
 
   const now = 1_700_000_000_000;
   const validExpiry = now + OTP_EXPIRY_MS;
-  assert.equal(validateOtpCodeInput('5678', '5678', true, validExpiry, now).valid, true);
+  assert.equal(validateOtpCodeInput('654321', '654321', true, validExpiry, now).valid, true);
 
+  // Even when the code matches, expired timestamp (Date.now() > expiresAt) must be rejected
   const expiredAt = now - 1000;
-  const expiredCheck = validateOtpCodeInput('5678', '5678', true, expiredAt, now);
+  const expiredCheck = validateOtpCodeInput('654321', '654321', true, expiredAt, now);
   assert.equal(expiredCheck.valid, false);
+  assert.equal(expiredCheck.expired, true);
   assert.ok(expiredCheck.errorAr?.includes('انتهت صلاحية'));
 });
 

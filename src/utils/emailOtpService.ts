@@ -19,8 +19,12 @@ export interface FormattedEmailJsError {
   technicalDetails?: string;
 }
 
-/** 5 minutes OTP validity duration in milliseconds */
-export const OTP_EXPIRY_MS = 5 * 60 * 1000;
+/** 15 minutes OTP validity duration (matches EmailJS OTP template) */
+export const OTP_EXPIRY_MINUTES = 15;
+export const OTP_EXPIRY_MS = OTP_EXPIRY_MINUTES * 60 * 1000;
+
+/** 6-digit OTP code length */
+export const OTP_LENGTH = 6;
 
 /** 60 seconds cooldown between OTP send/resend requests */
 export const OTP_RESEND_COOLDOWN_SECONDS = 60;
@@ -84,6 +88,34 @@ export function formatEmailJsError(err: unknown): FormattedEmailJsError {
       code: 'RATE_LIMIT',
       messageAr:
         'تم تجاوز الحد المسموح لإرسال رسائل التحقق عبر EmailJS مؤقتاً — يرجى الانتظار قليلاً ثم إعادة المحاولة.',
+      technicalDetails: rawText || undefined,
+    };
+  }
+
+  if (
+    status === 412 ||
+    lowerText.includes('gmail_api') ||
+    lowerText.includes('invalid grant') ||
+    lowerText.includes('insufficient')
+  ) {
+    return {
+      code: 'AUTH_ERROR',
+      messageAr:
+        'ربط Gmail داخل EmailJS يحتاج إعادة تفعيل (412) — افتح Email Services في EmailJS واضغط Reconnect وتأكد من تفعيل صلاحية إرسال الإيميلات.',
+      technicalDetails: rawText || undefined,
+    };
+  }
+
+  if (
+    status === 422 ||
+    lowerText.includes('recipient') ||
+    lowerText.includes('to_email') ||
+    lowerText.includes('address is empty')
+  ) {
+    return {
+      code: 'TEMPLATE_ERROR',
+      messageAr:
+        'فشل الإرسال عبر EmailJS: خانة المستلم (To Email) في قالب EmailJS فارغة — تأكد من وضع {{email}} في خانة To Email داخل لوحة تحكم EmailJS.',
       technicalDetails: rawText || undefined,
     };
   }
@@ -395,7 +427,8 @@ export function validateStudentProfileInput(
 }
 
 /**
- * Validates a 4-digit OTP input against format, expiration (5 minutes), and expected code.
+ * Validates a 6-digit OTP input against format, expiration (15 minutes), and expected code.
+ * Always rejects expired codes (nowMs > expiresAt) even if the digits match.
  */
 export function validateOtpCodeInput(
   inputCode: string,
@@ -406,10 +439,10 @@ export function validateOtpCodeInput(
 ): { valid: boolean; expired?: boolean; errorAr?: string } {
   const clean = toEnglishDigits(inputCode || '').trim();
   const cleanExpected = expectedCode ? toEnglishDigits(expectedCode).trim() : undefined;
-  if (!/^\d{4}$/.test(clean)) {
+  if (!/^\d{6}$/.test(clean)) {
     return {
       valid: false,
-      errorAr: 'يرجى إدخال الـ 4 أرقام أولاً',
+      errorAr: 'يرجى إدخال الـ 6 أرقام أولاً',
     };
   }
 
@@ -417,20 +450,19 @@ export function validateOtpCodeInput(
     return {
       valid: false,
       expired: true,
-      errorAr:
-        'انتهت صلاحية كود التحقق (5 دقائق) — يرجى الضغط على إعادة إرسال الكود للحصول على كود جديد.',
+      errorAr: `انتهت صلاحية كود التحقق (${OTP_EXPIRY_MINUTES} دقيقة) — يرجى الضغط على إعادة إرسال الكود للحصول على كود جديد.`,
     };
   }
 
   if (
     enforceExpectedMatch &&
     cleanExpected &&
-    /^\d{4}$/.test(cleanExpected) &&
+    /^\d{6}$/.test(cleanExpected) &&
     clean !== cleanExpected
   ) {
     return {
       valid: false,
-      errorAr: 'رمز التحقق غير صحيح — يرجى إدخال الكود المكون من 4 أرقام المرسل لبريدك',
+      errorAr: 'رمز التحقق غير صحيح — يرجى إدخال الكود المكون من 6 أرقام المرسل لبريدك',
     };
   }
 

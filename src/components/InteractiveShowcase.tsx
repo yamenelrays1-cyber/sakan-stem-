@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   validateOtpCodeInput,
   toEnglishDigits,
+  OTP_EXPIRY_MINUTES,
   OTP_EXPIRY_MS,
   OTP_RESEND_COOLDOWN_SECONDS,
   MAX_AUTH_ATTEMPTS,
@@ -286,7 +287,7 @@ export const MagicLampLoginDemo: React.FC<{
 };
 
 /* ============================================================================
- * 2. 4-DIGIT OTP VERIFICATION CODE COMPONENT
+ * 2. 6-DIGIT OTP VERIFICATION CODE COMPONENT
  * ============================================================================ */
 export const OtpVerificationCardDemo: React.FC<{
   expectedCode?: string;
@@ -303,13 +304,13 @@ export const OtpVerificationCardDemo: React.FC<{
   enforceExpectedMatch = true,
   expiresAt,
   initialCooldownSeconds = OTP_RESEND_COOLDOWN_SECONDS,
-  subtitleText = 'Enter the 4-digit code sent to your registered device.',
+  subtitleText = 'أدخل كود التحقق المكون من 6 أرقام المرسل لبريدك.',
   autoFillCode = null,
   onResendOtp,
   onVerifiedImmediate,
   onVerifiedSuccess,
 }) => {
-  const [digits, setDigits] = useState<string[]>(['', '', '', '']);
+  const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [isVerified, setIsVerified] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isResending, setIsResending] = useState<boolean>(false);
@@ -364,7 +365,13 @@ export const OtpVerificationCardDemo: React.FC<{
     }
 
     const code = nextDigits.join('');
-    if (code.length === 4 && /^\d{4}$/.test(code)) {
+    if (code.length === 6 && /^\d{6}$/.test(code)) {
+      if (activeExpiresAt > 0 && now > activeExpiresAt) {
+        setErrorMsg(
+          `انتهت صلاحية كود التحقق (${OTP_EXPIRY_MINUTES} دقيقة) — يرجى الضغط على إعادة إرسال الكود.`
+        );
+        return;
+      }
       const check = validateOtpCodeInput(
         code,
         expectedCode,
@@ -376,7 +383,7 @@ export const OtpVerificationCardDemo: React.FC<{
         if (check.expired) {
           setErrorMsg(
             check.errorAr ||
-              'انتهت صلاحية كود التحقق (5 دقائق) — يرجى الضغط على إعادة إرسال الكود.'
+              `انتهت صلاحية كود التحقق (${OTP_EXPIRY_MINUTES} دقيقة) — يرجى الضغط على إعادة إرسال الكود.`
           );
           return;
         }
@@ -407,7 +414,7 @@ export const OtpVerificationCardDemo: React.FC<{
   };
 
   useEffect(() => {
-    if (autoFillCode && /^\d{4}$/.test(autoFillCode) && !isVerified && !isLockedOut) {
+    if (autoFillCode && /^\d{6}$/.test(autoFillCode) && !isVerified && !isLockedOut) {
       const next = autoFillCode.split('');
       setDigits(next);
       setErrorMsg(null);
@@ -423,7 +430,7 @@ export const OtpVerificationCardDemo: React.FC<{
     setDigits(next);
     setErrorMsg(null);
 
-    if (clean && index < 3) {
+    if (clean && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
     verifyDigits(next);
@@ -439,10 +446,10 @@ export const OtpVerificationCardDemo: React.FC<{
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const code = digits.join('');
-      if (code.length === 4 && /^\d{4}$/.test(code)) {
+      if (code.length === 6 && /^\d{6}$/.test(code)) {
         verifyDigits(digits);
       } else {
-        setErrorMsg('يرجى إدخال الـ 4 أرقام أولاً');
+        setErrorMsg('يرجى إدخال الـ 6 أرقام أولاً');
       }
     }
   };
@@ -450,21 +457,21 @@ export const OtpVerificationCardDemo: React.FC<{
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault();
     if (isLockedOut) return;
-    const pasted = toEnglishDigits(e.clipboardData.getData('text')).replace(/\D/g, '').slice(0, 4);
+    const pasted = toEnglishDigits(e.clipboardData.getData('text')).replace(/\D/g, '').slice(0, 6);
     if (!pasted) return;
-    const next = ['', '', '', ''];
+    const next = ['', '', '', '', '', ''];
     pasted.split('').forEach((ch, idx) => {
       next[idx] = ch;
     });
     setDigits(next);
-    const focusIdx = Math.min(pasted.length, 3);
+    const focusIdx = Math.min(pasted.length, 5);
     inputRefs.current[focusIdx]?.focus();
     verifyDigits(next);
   };
 
   const handleResend = async () => {
     if (isResending || resendCooldown > 0 || isLockedOut) return;
-    setDigits(['', '', '', '']);
+    setDigits(['', '', '', '', '', '']);
     setErrorMsg(null);
     setIsVerified(false);
     setIsResending(true);
@@ -477,8 +484,12 @@ export const OtpVerificationCardDemo: React.FC<{
       setResendCooldown(OTP_RESEND_COOLDOWN_SECONDS);
       setResendFeedback(true);
       window.setTimeout(() => setResendFeedback(false), 2000);
-    } catch {
-      setErrorMsg('تعذر إعادة إرسال الكود حالياً — يرجى المحاولة مرة أخرى.');
+    } catch (err) {
+      setErrorMsg(
+        err instanceof Error && err.message
+          ? err.message
+          : 'تعذر إعادة إرسال الكود حالياً — يرجى المحاولة مرة أخرى.'
+      );
     } finally {
       setIsResending(false);
       inputRefs.current[0]?.focus();
@@ -550,7 +561,7 @@ export const OtpVerificationCardDemo: React.FC<{
               </p>
             )}
 
-            {/* 5-Minute OTP Expiration Status Badge */}
+            {/* 15-Minute OTP Expiration Status Badge */}
             <div dir="rtl" className="flex items-center justify-center">
               <span
                 className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-bold font-mono tabular-nums border ${
@@ -560,16 +571,16 @@ export const OtpVerificationCardDemo: React.FC<{
                 }`}
               >
                 {isOtpExpired
-                  ? '⏰ انتهت صلاحية الكود (5 دقائق) — أعد الإرسال'
+                  ? `⏰ انتهت صلاحية الكود (${OTP_EXPIRY_MINUTES} دقيقة) — أعد الإرسال`
                   : `⏳ صلاحية الكود: ${formatMmSs(expiryRemainingSeconds)}`}
               </span>
             </div>
 
-            {/* 4 Separate OTP Digit Boxes */}
+            {/* 6 Separate OTP Digit Boxes */}
             <div
-              className="flex items-center justify-center gap-3"
+              className="flex items-center justify-center gap-2"
               role="group"
-              aria-label="4-digit verification code"
+              aria-label="6-digit verification code"
             >
               {digits.map((digit, idx) => (
                 <input
@@ -586,7 +597,7 @@ export const OtpVerificationCardDemo: React.FC<{
                   onChange={(e) => handleChange(idx, e.target.value)}
                   onKeyDown={(e) => handleKeyDown(idx, e)}
                   onPaste={handlePaste}
-                  className={`w-[56px] h-[60px] rounded-2xl border-2 text-center font-mono tabular-nums text-2xl font-extrabold text-blue-400 outline-none transition-all disabled:opacity-45 disabled:cursor-not-allowed ${
+                  className={`w-[44px] h-[54px] sm:w-[48px] sm:h-[56px] rounded-xl border-2 text-center font-mono tabular-nums text-xl sm:text-2xl font-extrabold text-blue-400 outline-none transition-all disabled:opacity-45 disabled:cursor-not-allowed ${
                     digit
                       ? 'border-blue-400 bg-blue-500/15 shadow-[0_0_15px_rgba(59,130,246,0.25)]'
                       : 'border-slate-700 bg-slate-900/90'
@@ -613,10 +624,10 @@ export const OtpVerificationCardDemo: React.FC<{
                 disabled={isLockedOut || isOtpExpired}
                 onClick={() => {
                   const code = digits.join('');
-                  if (code.length === 4 && /^\d{4}$/.test(code)) {
+                  if (code.length === 6 && /^\d{6}$/.test(code)) {
                     verifyDigits(digits);
                   } else {
-                    setErrorMsg('يرجى إدخال الـ 4 أرقام أولاً');
+                    setErrorMsg('يرجى إدخال الـ 6 أرقام أولاً');
                   }
                 }}
                 className="w-full h-11 rounded-xl font-bold text-sm text-[#1c1917] bg-gradient-to-r from-[#ffe47a] via-[#ffd147] to-[#f5a623] hover:brightness-105 shadow-[0_6px_20px_rgba(245,166,35,0.28)] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"

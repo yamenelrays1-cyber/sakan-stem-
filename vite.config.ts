@@ -2,7 +2,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 const FALLBACK_FIREBASE_CONFIG = {
@@ -18,8 +18,21 @@ const FALLBACK_FIREBASE_CONFIG = {
   recaptchaSiteKey: '',
 };
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  const emailJsServiceId =
+    (env.VITE_EMAILJS_SERVICE_ID || env.EMAILJS_SERVICE_ID || '').trim() || 'service_740ewfp';
+  const emailJsTemplateId =
+    (env.VITE_EMAILJS_TEMPLATE_ID || env.EMAILJS_TEMPLATE_ID || '').trim() || 'template_dzloey5';
+  const emailJsPublicKey =
+    (env.VITE_EMAILJS_PUBLIC_KEY || env.EMAILJS_PUBLIC_KEY || '').trim() || '_SN178QkGFdMU8a4u';
+
   return {
+    define: {
+      'import.meta.env.VITE_EMAILJS_SERVICE_ID': JSON.stringify(emailJsServiceId),
+      'import.meta.env.VITE_EMAILJS_TEMPLATE_ID': JSON.stringify(emailJsTemplateId),
+      'import.meta.env.VITE_EMAILJS_PUBLIC_KEY': JSON.stringify(emailJsPublicKey),
+    },
     plugins: [
       {
         name: 'firebase-applet-config-fallback',

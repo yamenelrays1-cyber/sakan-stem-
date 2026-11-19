@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -687,12 +688,12 @@ async function startServer() {
   >();
   const otpAttemptStore = new Map<string, { failedAttempts: number; lockoutUntilMs: number }>();
 
-  // POST /api/auth/send-otp -> Generates a 4-digit OTP for the student's email and dispatches the verification message
+  // POST /api/auth/send-otp -> Records a 4-digit OTP sent via EmailJS for server-side verification & cooldown tracking
   app.post('/api/auth/send-otp', async (req, res) => {
     try {
       const emailCheck = validateEmailInput(String(req.body?.email || ''));
       if (!emailCheck.valid) {
-        res.status(400).json({ error: emailCheck.errorAr || 'يرجى إدخال بريد إلكتروني صحيح' });
+        res.status(400).json({ ok: false, error: emailCheck.errorAr || 'يرجى إدخال بريد إلكتروني صحيح' });
         return;
       }
       const email = emailCheck.sanitized;
@@ -705,6 +706,7 @@ async function startServer() {
       if (existing && now - existing.lastSentAt < OTP_RESEND_COOLDOWN_SECONDS * 1000) {
         const remainingSec = Math.ceil((OTP_RESEND_COOLDOWN_SECONDS * 1000 - (now - existing.lastSentAt)) / 1000);
         res.status(429).json({
+          ok: false,
           error: `يرجى الانتظار ${remainingSec} ثانية قبل طلب إرسال كود جديد.`,
           cooldownRemainingSeconds: remainingSec,
         });
@@ -712,10 +714,15 @@ async function startServer() {
       }
 
       const requestedCode = String(req.body?.code || '').trim();
-      const code = /^\d{4}$/.test(requestedCode)
+      const code = /^\d{6}$/.test(requestedCode)
         ? requestedCode
-        : String(Math.floor(1000 + Math.random() * 9000));
-      const expiresAt = now + OTP_EXPIRY_MS;
+        : Math.floor(100000 + Math.random() * 900000).toString();
+      const requestedExpiresAt = Number(req.body?.expiresAt);
+      const expiresAt =
+        Number.isFinite(requestedExpiresAt) && requestedExpiresAt > now
+          ? requestedExpiresAt
+          : now + OTP_EXPIRY_MS;
+
       otpStore.set(email, {
         code,
         email,
@@ -738,17 +745,18 @@ async function startServer() {
 
       res.json({
         ok: true,
+        provider: 'emailjs',
         email,
         expiresAt,
         cooldownSeconds: OTP_RESEND_COOLDOWN_SECONDS,
         subject: 'رمز التحقق من البريد — طلبات السكن STEM EL ARISH',
       });
     } catch {
-      res.status(500).json({ error: 'حدث خطأ أثناء إرسال رمز التحقق.' });
+      res.status(500).json({ ok: false, error: 'حدث خطأ أثناء تسجيل رمز التحقق.' });
     }
   });
 
-  // POST /api/auth/verify-otp -> Verifies the 4-digit OTP code sent to the student's Gmail
+  // POST /api/auth/verify-otp -> Verifies the 6-digit OTP code sent to the student's Gmail
   app.post('/api/auth/verify-otp', (req, res) => {
     const email = sanitizeTextInput(String(req.body?.email || ''), 120).toLowerCase();
     const code = sanitizeTextInput(String(req.body?.code || ''), 10);
@@ -777,7 +785,7 @@ async function startServer() {
 
     if (now > record.expiresAt) {
       otpStore.delete(email);
-      res.status(400).json({ ok: false, error: 'انتهت صلاحية كود التحقق (5 دقائق) — اضغط إعادة إرسال الكود' });
+      res.status(400).json({ ok: false, error: 'انتهت صلاحية كود التحقق (15 دقيقة) — اضغط إعادة إرسال الكود' });
       return;
     }
 
