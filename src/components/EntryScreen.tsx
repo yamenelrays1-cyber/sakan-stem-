@@ -46,6 +46,7 @@ const EMAILJS_PUBLIC_KEY =
 interface EmailJsSendOutcome {
   ok: boolean;
   configured: boolean;
+  sentViaProxy?: boolean;
   errorAr?: string;
 }
 
@@ -64,14 +65,16 @@ async function sendOtpViaEmailJS(
     return { ok: false, configured: false };
   }
 
-  try {
-    const cleanEmail = sanitizeTextInput(targetEmail, 120);
-    const expiryDate = new Date(expiresAtTimestamp);
-    const time = expiryDate.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+  const cleanEmail = sanitizeTextInput(targetEmail, 120);
+  const expiryDate = new Date(expiresAtTimestamp);
+  const time = expiryDate.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
+  let directFormattedError: ReturnType<typeof formatEmailJsError> | null = null;
+
+  try {
     const response = await emailjs.send(
       EMAILJS_SERVICE_ID,
       EMAILJS_TEMPLATE_ID,
@@ -83,26 +86,65 @@ async function sendOtpViaEmailJS(
       EMAILJS_PUBLIC_KEY
     );
     if (response.status >= 200 && response.status < 300) {
-      return { ok: true, configured: true };
+      return { ok: true, configured: true, sentViaProxy: false };
     }
-    const formatted = formatEmailJsError(response);
-    return {
-      ok: false,
-      configured: true,
-      errorAr: formatted.technicalDetails
-        ? `${formatted.messageAr} (${formatted.technicalDetails})`
-        : formatted.messageAr,
-    };
+    directFormattedError = formatEmailJsError(response);
   } catch (err: unknown) {
-    const formatted = formatEmailJsError(err);
-    return {
-      ok: false,
-      configured: true,
-      errorAr: formatted.technicalDetails
-        ? `${formatted.messageAr} (${formatted.technicalDetails})`
-        : formatted.messageAr,
-    };
+    directFormattedError = formatEmailJsError(err);
   }
+
+  // Automatic fallback: if the student's browser/Wi-Fi/ad-blocker blocks api.emailjs.com directly,
+  // relay the exact EmailJS request through same-origin /api/auth/send-otp
+  if (!directFormattedError || directFormattedError.code === 'NETWORK_ERROR') {
+    try {
+      const proxyResp = await fetch('/api/auth/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail,
+          code: passcode,
+          time,
+          expiresAt: expiresAtTimestamp,
+          sendViaServerProxy: true,
+        }),
+      });
+      const proxyData = (await proxyResp.json().catch(() => null)) as {
+        ok?: boolean;
+        emailSent?: boolean;
+        status?: number;
+        error?: string;
+      } | null;
+
+      if (proxyResp.ok && proxyData?.ok && proxyData?.emailSent) {
+        return { ok: true, configured: true, sentViaProxy: true };
+      }
+
+      if (proxyData?.error) {
+        const proxyFormatted = formatEmailJsError({
+          status: proxyData.status || proxyResp.status,
+          text: proxyData.error,
+        });
+        return {
+          ok: false,
+          configured: true,
+          errorAr: proxyFormatted.technicalDetails
+            ? `${proxyFormatted.messageAr} (${proxyFormatted.technicalDetails})`
+            : proxyFormatted.messageAr,
+        };
+      }
+    } catch {
+      // Keep directFormattedError below
+    }
+  }
+
+  return {
+    ok: false,
+    configured: true,
+    errorAr: directFormattedError?.technicalDetails
+      ? `${directFormattedError.messageAr} (${directFormattedError.technicalDetails})`
+      : directFormattedError?.messageAr ||
+        'تعذر الاتصال بخدمة EmailJS — يرجى المحاولة مرة أخرى.',
+  };
 }
 
 async function triggerPhoneOtpNotification(email: string, otpCode: string): Promise<void> {
@@ -351,17 +393,19 @@ export const EntryScreen: React.FC<EntryScreenProps> = ({
       setSendCooldownSeconds(OTP_RESEND_COOLDOWN_SECONDS);
       playIncomingMailSound();
       void triggerPhoneOtpNotification(targetEmail, passcode);
-      void fetch('/api/auth/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: targetEmail,
-          code: passcode,
-          expiresAt: expiresAtTimestamp,
-          name: cleanName,
-          room: cleanRoom,
-        }),
-      }).catch(() => {});
+      if (!emailJsOutcome.sentViaProxy) {
+        void fetch('/api/auth/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: targetEmail,
+            code: passcode,
+            expiresAt: expiresAtTimestamp,
+            name: cleanName,
+            room: cleanRoom,
+          }),
+        }).catch(() => {});
+      }
 
       return { ok: true, code: passcode };
     } finally {

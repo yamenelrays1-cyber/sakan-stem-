@@ -162,7 +162,7 @@ export const SYRIAN_SANDWICHES_MENU: readonly SyrianMenuOption[] = [
     sizeBadge: 'M',
     sizeLabelAr: 'وسط',
     itemName: 'بطاطس وسط',
-    unitPrice: 25,
+    unitPrice: 30,
     section: 'sandwiches',
   },
   {
@@ -172,7 +172,7 @@ export const SYRIAN_SANDWICHES_MENU: readonly SyrianMenuOption[] = [
     sizeBadge: 'L',
     sizeLabelAr: 'كبير',
     itemName: 'بطاطس كبير',
-    unitPrice: 30,
+    unitPrice: 35,
     section: 'sandwiches',
   },
   {
@@ -182,7 +182,7 @@ export const SYRIAN_SANDWICHES_MENU: readonly SyrianMenuOption[] = [
     sizeBadge: 'M',
     sizeLabelAr: 'وسط',
     itemName: 'بطاطس موتزريلا وسط',
-    unitPrice: 35,
+    unitPrice: 40,
     section: 'sandwiches',
   },
   {
@@ -192,7 +192,7 @@ export const SYRIAN_SANDWICHES_MENU: readonly SyrianMenuOption[] = [
     sizeBadge: 'L',
     sizeLabelAr: 'كبير',
     itemName: 'بطاطس موتزريلا كبير',
-    unitPrice: 40,
+    unitPrice: 45,
     section: 'sandwiches',
   },
   {

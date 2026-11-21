@@ -688,7 +688,7 @@ async function startServer() {
   >();
   const otpAttemptStore = new Map<string, { failedAttempts: number; lockoutUntilMs: number }>();
 
-  // POST /api/auth/send-otp -> Records a 4-digit OTP sent via EmailJS for server-side verification & cooldown tracking
+  // POST /api/auth/send-otp -> Records a 6-digit OTP sent via EmailJS, or relays via EmailJS server-side if client network blocks api.emailjs.com
   app.post('/api/auth/send-otp', async (req, res) => {
     try {
       const emailCheck = validateEmailInput(String(req.body?.email || ''));
@@ -700,6 +700,7 @@ async function startServer() {
       const name = sanitizeTextInput(String(req.body?.name || ''), 60);
       const room = sanitizeTextInput(String(req.body?.room || ''), 30);
       const sub = req.body?.subscription as webpush.PushSubscription | undefined;
+      const sendViaServerProxy = Boolean(req.body?.sendViaServerProxy);
 
       const existing = otpStore.get(email);
       const now = Date.now();
@@ -722,6 +723,61 @@ async function startServer() {
         Number.isFinite(requestedExpiresAt) && requestedExpiresAt > now
           ? requestedExpiresAt
           : now + OTP_EXPIRY_MS;
+      const time =
+        String(req.body?.time || '').trim() ||
+        new Date(expiresAt).toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+
+      if (sendViaServerProxy) {
+        const serviceId =
+          (process.env.VITE_EMAILJS_SERVICE_ID || process.env.EMAILJS_SERVICE_ID || '').trim() ||
+          'service_740ewfp';
+        const templateId =
+          (process.env.VITE_EMAILJS_TEMPLATE_ID || process.env.EMAILJS_TEMPLATE_ID || '').trim() ||
+          'template_dzloey5';
+        const publicKey =
+          (process.env.VITE_EMAILJS_PUBLIC_KEY || process.env.EMAILJS_PUBLIC_KEY || '').trim() ||
+          '_SN178QkGFdMU8a4u';
+
+        const effectiveOrigin =
+          (typeof req.headers.origin === 'string' && req.headers.origin) ||
+          (req.headers.host ? `https://${req.headers.host}` : 'https://localhost');
+
+        const emailJsResp = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Origin: effectiveOrigin,
+            Referer: `${effectiveOrigin}/`,
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+          },
+          body: JSON.stringify({
+            lib_version: '5.0.3',
+            user_id: publicKey,
+            service_id: serviceId,
+            template_id: templateId,
+            template_params: {
+              email,
+              passcode: code,
+              time,
+            },
+          }),
+        });
+
+        const respText = await emailJsResp.text().catch(() => '');
+        if (!emailJsResp.ok) {
+          res.status(emailJsResp.status >= 400 ? emailJsResp.status : 502).json({
+            ok: false,
+            emailSent: false,
+            status: emailJsResp.status,
+            error: respText || 'تعذر إرسال رمز التحقق عبر EmailJS.',
+          });
+          return;
+        }
+      }
 
       otpStore.set(email, {
         code,
@@ -745,14 +801,15 @@ async function startServer() {
 
       res.json({
         ok: true,
-        provider: 'emailjs',
+        emailSent: true,
+        provider: sendViaServerProxy ? 'emailjs-proxy' : 'emailjs',
         email,
         expiresAt,
         cooldownSeconds: OTP_RESEND_COOLDOWN_SECONDS,
         subject: 'رمز التحقق من البريد — طلبات السكن STEM EL ARISH',
       });
     } catch {
-      res.status(500).json({ ok: false, error: 'حدث خطأ أثناء تسجيل رمز التحقق.' });
+      res.status(500).json({ ok: false, emailSent: false, error: 'حدث خطأ أثناء إرسال رمز التحقق.' });
     }
   });
 
